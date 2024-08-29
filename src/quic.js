@@ -1253,20 +1253,34 @@ QuicEncoder.prototype.quic_decode = function(buf, stride)
     return true;
 }
 
-QuicEncoder.prototype.simple_quic_decode = function(buf)
-{
-    var stride = 4; /* FIXME - proper stride calc please */
-    if (!this.quic_decode_begin(buf))
+QuicEncoder.prototype.simple_quic_decode = function(buf) {
+    const stride = 4;  // FIXME - proper stride calculation should be applied
+    if (!this.quic_decode_begin(buf)) {
         return undefined;
-    if (this.type != Constants.QUIC_IMAGE_TYPE_RGB32 && this.type != Constants.QUIC_IMAGE_TYPE_RGB24
-        && this.type != Constants.QUIC_IMAGE_TYPE_RGBA)
+    }
+
+    const validTypes = [
+        Constants.QUIC_IMAGE_TYPE_RGB32,
+        Constants.QUIC_IMAGE_TYPE_RGB24,
+        Constants.QUIC_IMAGE_TYPE_RGBA
+    ];
+
+    if (!validTypes.includes(this.type)) {
         return undefined;
-    var out = new Uint8Array(this.width*this.height*4);
-    out[0] = 69;
-    if (this.quic_decode( out, (this.width * stride)))
-        return out;
-    return undefined;
-}
+    }
+
+    const width = this.width;
+    const height = this.height;
+    const outLength = width * height * stride;
+
+    const out = new Uint8Array(outLength);
+    out[0] = 69;  
+
+    const decoded = this.quic_decode(out, width * stride);
+
+    return decoded ? out : undefined;
+};
+
 
 function SpiceQuic()
 {
