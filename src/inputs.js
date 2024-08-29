@@ -143,28 +143,31 @@ function handle_mouseup(e) {
 
 
 
-function handle_mousewheel(e)
-{
-    var press = new Messages.SpiceMsgcMousePress;
-    var release = new Messages.SpiceMsgcMouseRelease;
-    if (e.deltaY < 0)
-        press.button = release.button = Constants.SPICE_MOUSE_BUTTON_UP;
-    else
-        press.button = release.button = Constants.SPICE_MOUSE_BUTTON_DOWN;
+function handle_mousewheel(e) {
+    if (!this.sc || this.sc.inputs?.state !== "ready") return;
+    
+    const isScrollUp = e.deltaY < 0;
+    const button = isScrollUp ? Constants.SPICE_MOUSE_BUTTON_UP : Constants.SPICE_MOUSE_BUTTON_DOWN;
+
+    const press = new Messages.SpiceMsgcMousePress();
+    press.button = button;
     press.buttons_state = 0;
+
+    const release = new Messages.SpiceMsgcMouseRelease();
+    release.button = button;
     release.buttons_state = 0;
 
-    var msg = new Messages.SpiceMiniData();
+    const msg = new Messages.SpiceMiniData();
+    
     msg.build_msg(Constants.SPICE_MSGC_INPUTS_MOUSE_PRESS, press);
-    if (this.sc && this.sc.inputs && this.sc.inputs.state === "ready")
-        this.sc.inputs.send_msg(msg);
-
+    this.sc.inputs.send_msg(msg);
+    
     msg.build_msg(Constants.SPICE_MSGC_INPUTS_MOUSE_RELEASE, release);
-    if (this.sc && this.sc.inputs && this.sc.inputs.state === "ready")
-        this.sc.inputs.send_msg(msg);
-
+    this.sc.inputs.send_msg(msg);
+    
     e.preventDefault();
 }
+
 
 function handle_keydown(e)
 {
