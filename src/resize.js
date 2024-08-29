@@ -30,61 +30,41 @@
 **  window size) is tricky, and the consensus seems to be that Javascript is
 **  the only right way to do it.
 **--------------------------------------------------------------------------*/
-function resize_helper(sc)
-{
-    var w = document.getElementById(sc.screen_id).clientWidth;
-    var m = document.getElementById(sc.message_id);
 
-    /* Resize vertically; basically we leave a 20 pixel margin
-         at the bottom, and use the position of the message window
-         to figure out how to resize */
+function resizeHelper(sc) {
+    const screenElement = document.getElementById(sc.screen_id);
+    const messageElement = document.getElementById(sc.message_id);
 
-    var h = window.innerHeight - 20;
+    let width = screenElement.clientWidth;
+    let height = window.innerHeight - 20;
 
-    /* Screen height based on debug console visibility  */
-    if (m != null)
-    {
-        if (window.getComputedStyle(m).getPropertyValue("display") == 'none')
-        {
-            /* Get console height from spice.css .spice-message */
-            var mh = parseInt(window.getComputedStyle(m).getPropertyValue("height"), 10);
-            h = h - mh;
-        }
-        else
-        {
-            /* Show both div elements - spice-area and message-div */
-            h = h - m.offsetHeight - m.clientHeight;
+    if (messageElement) {
+        const messageStyle = window.getComputedStyle(messageElement);
+        if (messageStyle.getPropertyValue("display") === 'none') {
+            height -= parseInt(messageStyle.getPropertyValue("height"), 10);
+        } else {
+            height -= messageElement.offsetHeight;
         }
     }
 
+    width -= width % 8;
+    height -= height % 8;
 
-    /* Xorg requires height be a multiple of 8; round down */
-    if (h % 8 > 0)
-        h -= (h % 8);
-
-    /* Xorg requires width be a multiple of 8; round down */
-    if (w % 8 > 0)
-        w -= (w % 8);
-
-
-    sc.resize_window(0, w, h, 32, 0, 0);
+    sc.resize_window(0, width, height, 32, 0, 0);
     sc.spice_resize_timer = undefined;
 }
 
-function handle_resize(e)
-{
-    var sc = window.spice_connection;
-
-    if (sc && sc.spice_resize_timer)
-    {
-        window.clearTimeout(sc.spice_resize_timer);
-        sc.spice_resize_timer = undefined;
+function handleResize() {
+    const sc = window.spice_connection;
+    if (sc) {
+        if (sc.spice_resize_timer) {
+            window.clearTimeout(sc.spice_resize_timer);
+        }
+        sc.spice_resize_timer = window.setTimeout(resizeHelper, 200, sc);
     }
-
-    sc.spice_resize_timer = window.setTimeout(resize_helper, 200, sc);
 }
 
 export {
-  resize_helper,
-  handle_resize,
+    resizeHelper as resize_helper,
+    handleResize as handle_resize,
 };
