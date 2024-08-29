@@ -895,35 +895,25 @@ function handle_mouseout(e)
     this.blur();
 }
 
-function handle_draw_jpeg_onload()
-{
+function handle_draw_jpeg_onload() {
     var temp_canvas = null;
     var context;
 
-    if ("streams" in this.o.sc && this.o.sc.streams[this.o.id])
+    if (this.o && this.o.sc && this.o.sc.streams && this.o.id && this.o.sc.streams[this.o.id]) {
         this.o.sc.streams[this.o.id].frames_loading--;
-
-    /*------------------------------------------------------------
-    ** FIXME:
-    **  The helper should be extended to be able to handle actual HtmlImageElements
-    **  ...and the cache should be modified to do so as well
-    **----------------------------------------------------------*/
-    if (this.o.sc.surfaces[this.o.base.surface_id] === undefined)
-    {
-        // This can happen; if the jpeg image loads after our surface
-        //  has been destroyed (e.g. open a menu, close it quickly),
-        //  we'll find we have no surface.
-        Utils.DEBUG > 2 && this.o.sc.log_info("Discarding jpeg; presumed lost surface " + this.o.base.surface_id);
-        temp_canvas = document.createElement("canvas");
-        temp_canvas.setAttribute('width', this.o.base.box.right);
-        temp_canvas.setAttribute('height', this.o.base.box.bottom);
-        context = temp_canvas.getContext("2d");
     }
-    else
-        context = this.o.sc.surfaces[this.o.base.surface_id].canvas.context;
 
-    if (this.alpha_img)
-    {
+    if (!this.o || !this.o.base || this.o.sc.surfaces[this.o.base.surface_id] === undefined) {
+        Utils.DEBUG > 2 && this.o.sc && this.o.sc.log_info && this.o.sc.log_info("Discarding jpeg; presumed lost surface " + (this.o.base ? this.o.base.surface_id : 'unknown surface id'));
+        temp_canvas = document.createElement("canvas");
+        temp_canvas.setAttribute('width', this.o.base ? this.o.base.box.right : 0);
+        temp_canvas.setAttribute('height', this.o.base ? this.o.base.box.bottom : 0);
+        context = temp_canvas.getContext("2d");
+    } else {
+        context = this.o.sc.surfaces[this.o.base.surface_id].canvas.context;
+    }
+
+    if (this.alpha_img) {
         var c = document.createElement("canvas");
         var t = c.getContext("2d");
         c.setAttribute('width', this.alpha_img.width);
@@ -932,46 +922,33 @@ function handle_draw_jpeg_onload()
         t.globalCompositeOperation = 'source-in';
         t.drawImage(this, 0, 0);
 
-        context.drawImage(c, this.o.base.box.left, this.o.base.box.top);
+        context.drawImage(c, this.o.base ? this.o.base.box.left : 0, this.o.base ? this.o.base.box.top : 0);
 
-        if (this.o.descriptor &&
-            (this.o.descriptor.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME))
-        {
-            if (! ("cache" in this.o.sc))
+        if (this.o.descriptor && (this.o.descriptor.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME)) {
+            if (!this.o.sc.cache) {
                 this.o.sc.cache = {};
+            }
 
-            this.o.sc.cache[this.o.descriptor.id] =
-                t.getImageData(0, 0,
-                    this.alpha_img.width,
-                    this.alpha_img.height);
+            this.o.sc.cache[this.o.descriptor.id] = t.getImageData(0, 0, this.alpha_img.width, this.alpha_img.height);
         }
-    }
-    else
-    {
-        context.drawImage(this, this.o.base.box.left, this.o.base.box.top);
+    } else {
+        context.drawImage(this, this.o.base ? this.o.base.box.left : 0, this.o.base ? this.o.base.box.top : 0);
 
-        // Give the Garbage collector a clue to recycle this; avoids
-        //  fairly massive memory leaks during video playback
         this.onload = undefined;
         this.src = Utils.EMPTY_GIF_IMAGE;
 
-        if (this.o.descriptor &&
-            (this.o.descriptor.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME))
-        {
-            if (! ("cache" in this.o.sc))
+        if (this.o.descriptor && (this.o.descriptor.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME)) {
+            if (!this.o.sc.cache) {
                 this.o.sc.cache = {};
+            }
 
-            this.o.sc.cache[this.o.descriptor.id] =
-                context.getImageData(this.o.base.box.left, this.o.base.box.top,
-                    this.o.base.box.right - this.o.base.box.left,
-                    this.o.base.box.bottom - this.o.base.box.top);
+            this.o.sc.cache[this.o.descriptor.id] = context.getImageData(this.o.base.box.left, this.o.base.box.top,
+                this.o.base.box.right - this.o.base.box.left, this.o.base.box.bottom - this.o.base.box.top);
         }
     }
 
-    if (temp_canvas == null)
-    {
-        if (Utils.DUMP_DRAWS && this.o.sc.parent.dump_id)
-        {
+    if (temp_canvas == null) {
+        if (Utils.DUMP_DRAWS && this.o.sc.parent && this.o.sc.parent.dump_id) {
             var debug_canvas = document.createElement("canvas");
             debug_canvas.setAttribute('id', this.o.tag + "." +
                 this.o.sc.surfaces[this.o.base.surface_id].draw_count + "." +
@@ -983,9 +960,11 @@ function handle_draw_jpeg_onload()
         this.o.sc.surfaces[this.o.base.surface_id].draw_count++;
     }
 
-    if (this.o.sc.streams[this.o.id] && "report" in this.o.sc.streams[this.o.id])
+    if (this.o.sc.streams && this.o.sc.streams[this.o.id] && this.o.sc.streams[this.o.id].report) {
         process_stream_data_report(this.o.sc, this.o.id, this.o.msg_mmtime, this.o.msg_mmtime - this.o.sc.parent.relative_now());
+    }
 }
+
 
 function process_mjpeg_stream_data(sc, m, time_until_due)
 {
