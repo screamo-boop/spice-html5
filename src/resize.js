@@ -35,13 +35,15 @@ function resizeHelper(sc) {
     const screenElement = document.getElementById(sc.screen_id);
     const messageElement = document.getElementById(sc.message_id);
 
+    if (!screenElement) return;
+
     let width = screenElement.clientWidth;
     let height = window.innerHeight - 20;
 
     if (messageElement) {
-        const messageStyle = window.getComputedStyle(messageElement);
-        if (messageStyle.getPropertyValue("display") === 'none') {
-            height -= parseInt(messageStyle.getPropertyValue("height"), 10);
+        const display = window.getComputedStyle(messageElement).display;
+        if (display === 'none') {
+            height -= parseInt(window.getComputedStyle(messageElement).height, 10);
         } else {
             height -= messageElement.offsetHeight;
         }
@@ -56,12 +58,13 @@ function resizeHelper(sc) {
 
 function handleResize() {
     const sc = window.spice_connection;
-    if (sc) {
-        if (sc.spice_resize_timer) {
-            window.clearTimeout(sc.spice_resize_timer);
-        }
-        sc.spice_resize_timer = window.setTimeout(resizeHelper, 200, sc);
+    if (!sc) return;
+
+    if (sc.spice_resize_timer) {
+        window.clearTimeout(sc.spice_resize_timer);
     }
+
+    sc.spice_resize_timer = window.setTimeout(() => resizeHelper(sc), 200);
 }
 
 export {
