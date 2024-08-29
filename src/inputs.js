@@ -78,42 +78,40 @@ SpiceInputsConn.prototype.process_channel_message = function(msg)
 
 
 
-function handle_mousemove(e)
-{
+function handle_mousemove(e) {
+    if (!this.sc) return;
+
     var msg = new Messages.SpiceMiniData();
-    var move;
-    if (this.sc.mouse_mode == Constants.SPICE_MOUSE_MODE_CLIENT)
-    {
-        move = new Messages.SpiceMsgcMousePosition(this.sc, e)
-        msg.build_msg(Constants.SPICE_MSGC_INPUTS_MOUSE_POSITION, move);
-    }
-    else
-    {
-        move = new Messages.SpiceMsgcMouseMotion(this.sc, e)
-        msg.build_msg(Constants.SPICE_MSGC_INPUTS_MOUSE_MOTION, move);
-    }
-    if (this.sc && this.sc.inputs && this.sc.inputs.state === "ready")
-    {
-        if (this.sc.inputs.waiting_for_ack < (2 * Constants.SPICE_INPUT_MOTION_ACK_BUNCH))
-        {
+    var isClientMouseMode = this.sc.mouse_mode == Constants.SPICE_MOUSE_MODE_CLIENT;
+    var move = isClientMouseMode ? 
+        new Messages.SpiceMsgcMousePosition(this.sc, e) : 
+        new Messages.SpiceMsgcMouseMotion(this.sc, e);
+    
+    var buildMessageType = isClientMouseMode ? 
+        Constants.SPICE_MSGC_INPUTS_MOUSE_POSITION : 
+        Constants.SPICE_MSGC_INPUTS_MOUSE_MOTION;
+
+    msg.build_msg(buildMessageType, move);
+
+    if (this.sc.inputs?.state === "ready") {
+        const ackLimit = 2 * Constants.SPICE_INPUT_MOTION_ACK_BUNCH;
+        if (this.sc.inputs.waiting_for_ack < ackLimit) {
             this.sc.inputs.send_msg(msg);
             this.sc.inputs.waiting_for_ack++;
-        }
-        else
-        {
+        } else {
             DEBUG > 0 && this.sc.log_info("Discarding mouse motion");
         }
     }
 
-    if (this.sc && this.sc.cursor && this.sc.cursor.spice_simulated_cursor)
-    {
-        this.sc.cursor.spice_simulated_cursor.style.display = 'block';
-        this.sc.cursor.spice_simulated_cursor.style.left = e.pageX - this.sc.cursor.spice_simulated_cursor.spice_hot_x + 'px';
-        this.sc.cursor.spice_simulated_cursor.style.top = e.pageY - this.sc.cursor.spice_simulated_cursor.spice_hot_y + 'px';
+    var cursor = this.sc.cursor?.spice_simulated_cursor;
+    if (cursor) {
+        cursor.style.display = 'block';
+        cursor.style.left = `${e.pageX - cursor.spice_hot_x}px`;
+        cursor.style.top = `${e.pageY - cursor.spice_hot_y}px`;
         e.preventDefault();
     }
-
 }
+
 
 function handle_mousedown(e)
 {
