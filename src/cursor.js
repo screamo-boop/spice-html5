@@ -32,110 +32,100 @@ import { SpiceConn } from './spiceconn.js';
 **  SpiceCursorConn
 **      Drive the Spice Cursor Channel
 **--------------------------------------------------------------------------*/
-function SpiceCursorConn()
-{
-    SpiceConn.apply(this, arguments);
-}
+class SpiceCursorConn extends SpiceConn {
+    process_channel_message(msg) {
+        switch (msg.type) {
+            case Constants.SPICE_MSG_CURSOR_INIT:
+                return this.handleCursorInit(msg);
+            case Constants.SPICE_MSG_CURSOR_SET:
+                return this.handleCursorSet(msg);
+            case Constants.SPICE_MSG_CURSOR_MOVE:
+                this.known_unimplemented(msg.type, "Cursor Move");
+                return true;
+            case Constants.SPICE_MSG_CURSOR_HIDE:
+                return this.hideCursor();
+            case Constants.SPICE_MSG_CURSOR_TRAIL:
+                this.known_unimplemented(msg.type, "Cursor Trail");
+                return true;
+            case Constants.SPICE_MSG_CURSOR_RESET:
+                return this.resetCursor();
+            case Constants.SPICE_MSG_CURSOR_INVAL_ONE:
+                this.known_unimplemented(msg.type, "Cursor Inval One");
+                return true;
+            case Constants.SPICE_MSG_CURSOR_INVAL_ALL:
+                DEBUG > 1 && console.log("SpiceMsgCursorInvalAll");
+                // FIXME - There may be something useful to do here...
+                return true;
+            default:
+                return false;
+        }
+    }
 
-SpiceCursorConn.prototype = Object.create(SpiceConn.prototype);
-SpiceCursorConn.prototype.process_channel_message = function(msg)
-{
-    if (msg.type == Constants.SPICE_MSG_CURSOR_INIT)
-    {
-        var cursor_init = new SpiceMsgCursorInit(msg.data);
+    handleCursorInit(msg) {
+        const cursor_init = new SpiceMsgCursorInit(msg.data);
         DEBUG > 1 && console.log("SpiceMsgCursorInit");
-        if (this.parent && this.parent.inputs &&
-            this.parent.inputs.mouse_mode == Constants.SPICE_MOUSE_MODE_SERVER)
-        {
-            // FIXME - this imagines that the server actually
-            //          provides the current cursor position,
-            //          instead of 0,0.  As of May 11, 2012,
-            //          that assumption was false :-(.
+        
+        if (this.parent?.inputs?.mouse_mode === Constants.SPICE_MOUSE_MODE_SERVER) {
             this.parent.inputs.mousex = cursor_init.position.x;
             this.parent.inputs.mousey = cursor_init.position.y;
         }
+
         // FIXME - We don't handle most of the parameters here...
         return true;
     }
 
-    if (msg.type == Constants.SPICE_MSG_CURSOR_SET)
-    {
-        var cursor_set = new SpiceMsgCursorSet(msg.data);
+    handleCursorSet(msg) {
+        const cursor_set = new SpiceMsgCursorSet(msg.data);
         DEBUG > 1 && console.log("SpiceMsgCursorSet");
-        if (cursor_set.flags & Constants.SPICE_CURSOR_FLAGS_NONE)
-        {
-            document.getElementById(this.parent.screen_id).style.cursor = "none";
+
+        if (cursor_set.flags & Constants.SPICE_CURSOR_FLAGS_NONE) {
+            this.setCursorStyle("none");
             return true;
         }
 
-        if (cursor_set.flags > 0)
-            this.log_warn("FIXME: No support for cursor flags " + cursor_set.flags);
+        if (cursor_set.flags > 0) {
+            this.log_warn(`FIXME: No support for cursor flags ${cursor_set.flags}`);
+        }
 
-        if (cursor_set.cursor.header.type != Constants.SPICE_CURSOR_TYPE_ALPHA)
-        {
-            this.log_warn("FIXME: No support for cursor type " + cursor_set.cursor.header.type);
+        if (cursor_set.cursor.header.type !== Constants.SPICE_CURSOR_TYPE_ALPHA) {
+            this.log_warn(`FIXME: No support for cursor type ${cursor_set.cursor.header.type}`);
             return false;
         }
 
         this.set_cursor(cursor_set.cursor);
-
         return true;
     }
 
-    if (msg.type == Constants.SPICE_MSG_CURSOR_MOVE)
-    {
-        this.known_unimplemented(msg.type, "Cursor Move");
-        return true;
-    }
-
-    if (msg.type == Constants.SPICE_MSG_CURSOR_HIDE)
-    {
+    hideCursor() {
         DEBUG > 1 && console.log("SpiceMsgCursorHide");
-        document.getElementById(this.parent.screen_id).style.cursor = "none";
+        this.setCursorStyle("none");
         return true;
     }
 
-    if (msg.type == Constants.SPICE_MSG_CURSOR_TRAIL)
-    {
-        this.known_unimplemented(msg.type, "Cursor Trail");
-        return true;
-    }
-
-    if (msg.type == Constants.SPICE_MSG_CURSOR_RESET)
-    {
+    resetCursor() {
         DEBUG > 1 && console.log("SpiceMsgCursorReset");
-        document.getElementById(this.parent.screen_id).style.cursor = "auto";
+        this.setCursorStyle("auto");
         return true;
     }
 
-    if (msg.type == Constants.SPICE_MSG_CURSOR_INVAL_ONE)
-    {
-        this.known_unimplemented(msg.type, "Cursor Inval One");
-        return true;
+    setCursorStyle(style) {
+        const screen = document.getElementById(this.parent.screen_id);
+        screen.style.cursor = style;
     }
 
-    if (msg.type == Constants.SPICE_MSG_CURSOR_INVAL_ALL)
-    {
-        DEBUG > 1 && console.log("SpiceMsgCursorInvalAll");
-        // FIXME - There may be something useful to do here...
-        return true;
-    }
+    set_cursor(cursor) {
+        const { width, height, hot_spot_x, hot_spot_y } = cursor.header;
+        const pngstr = create_rgba_png(width, height, cursor.data);
+        const curstr = `url(data:image/png,${pngstr}) ${hot_spot_x} ${hot_spot_y}, default`;
+        const screen = document.getElementById(this.parent.screen_id);
 
-    return false;
+        screen.style.cursor = 'auto';
+        screen.style.cursor = curstr;
+
+        if (window.getComputedStyle(screen).cursor === 'auto') {
+            SpiceSimulateCursor.simulate_cursor(this, cursor, screen, pngstr);
+        }
+    }
 }
 
-SpiceCursorConn.prototype.set_cursor = function(cursor)
-{
-    var pngstr = create_rgba_png(cursor.header.width, cursor.header.height, cursor.data);
-    var curstr = 'url(data:image/png,' + pngstr + ') ' +
-        cursor.header.hot_spot_x + ' ' + cursor.header.hot_spot_y + ", default";
-    var screen = document.getElementById(this.parent.screen_id);
-    screen.style.cursor = 'auto';
-    screen.style.cursor = curstr;
-    if (window.getComputedStyle(screen, null).cursor == 'auto')
-        SpiceSimulateCursor.simulate_cursor(this, cursor, screen, pngstr);
-}
-
-export {
-  SpiceCursorConn,
-};
+export { SpiceCursorConn };
