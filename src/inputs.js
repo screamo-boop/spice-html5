@@ -190,9 +190,8 @@ function handle_keyup(e)
     e.preventDefault();
 }
 
-function sendCtrlAltDel(sc)
-{
-    if (sc && sc.inputs && sc.inputs.state === "ready"){
+function sendCtrlAltDel(sc) {
+    if (sc && sc.inputs && sc.inputs.state === "ready") {
         var key = new Messages.SpiceMsgcKeyDown();
         var msg = new Messages.SpiceMiniData();
 
@@ -205,8 +204,8 @@ function sendCtrlAltDel(sc)
         msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_UP, key);
         sc.inputs.send_msg(msg);
 
-        if(Ctrl_state == false) update_modifier(false, KeyNames.KEY_LCtrl, sc);
-        if(Alt_state == false) update_modifier(false, KeyNames.KEY_Alt, sc);
+        update_modifier(false, KeyNames.KEY_LCtrl, sc);
+        update_modifier(false, KeyNames.KEY_Alt, sc);
     }
 }
 
