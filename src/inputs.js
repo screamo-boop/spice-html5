@@ -169,29 +169,27 @@ function handle_mousewheel(e) {
 }
 
 
-function handle_keydown(e)
-{
-    var key = new Messages.SpiceMsgcKeyDown(e)
-    var msg = new Messages.SpiceMiniData();
+function handle_keydown(e) {
+    if (!this.sc || this.sc.inputs?.state !== "ready") return;
+    const key = new Messages.SpiceMsgcKeyDown(e);
     check_and_update_modifiers(e, key.code, this.sc);
+    const msg = new Messages.SpiceMiniData();
     msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_DOWN, key);
-    if (this.sc && this.sc.inputs && this.sc.inputs.state === "ready")
-        this.sc.inputs.send_msg(msg);
-
+    this.sc.inputs.send_msg(msg);
     e.preventDefault();
 }
 
-function handle_keyup(e)
-{
-    var key = new Messages.SpiceMsgcKeyUp(e)
-    var msg = new Messages.SpiceMiniData();
+function handle_keyup(e) {
+    if (!this.sc || this.sc.inputs?.state !== "ready") return;
+    const key = new Messages.SpiceMsgcKeyUp(e);
     check_and_update_modifiers(e, key.code, this.sc);
+    const msg = new Messages.SpiceMiniData();
     msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_UP, key);
-    if (this.sc && this.sc.inputs && this.sc.inputs.state === "ready")
-        this.sc.inputs.send_msg(msg);
-
+    this.sc.inputs.send_msg(msg);
     e.preventDefault();
 }
+
+
 
 function sendCtrlAltDel(sc) {
     if (sc && sc.inputs && sc.inputs.state === "ready") {
