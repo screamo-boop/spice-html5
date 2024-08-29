@@ -264,7 +264,6 @@ function check_and_update_modifiers(event, code, spiceClient) {
 
         stateChecks.forEach(({ key, eventKey, keyName }) => {
             if (window[key] !== eventKey) {
-                console.log(`${key.replace('_state', '')} state out of sync`);
                 update_modifier(eventKey, keyName, spiceClient);
                 window[key] = eventKey;
             }
