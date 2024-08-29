@@ -130,16 +130,18 @@ function handle_contextmenu(e)
     return false;
 }
 
-function handle_mouseup(e)
-{
-    var release = new Messages.SpiceMsgcMouseRelease(this.sc, e)
-    var msg = new Messages.SpiceMiniData();
-    msg.build_msg(Constants.SPICE_MSGC_INPUTS_MOUSE_RELEASE, release);
-    if (this.sc && this.sc.inputs && this.sc.inputs.state === "ready")
-        this.sc.inputs.send_msg(msg);
+function handle_mouseup(e) {
+    if (!this.sc || this.sc.inputs?.state !== "ready") return;
 
+    const release = new Messages.SpiceMsgcMouseRelease(this.sc, e);
+    const msg = new Messages.SpiceMiniData();
+    msg.build_msg(Constants.SPICE_MSGC_INPUTS_MOUSE_RELEASE, release);
+    
+    this.sc.inputs.send_msg(msg);
     e.preventDefault();
 }
+
+
 
 function handle_mousewheel(e)
 {
