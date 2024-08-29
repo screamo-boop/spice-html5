@@ -1186,72 +1186,68 @@ QuicEncoder.prototype.quic_four_uncompress_row = function(channel, prev_row,
 }
 
 /* We need to be generating rgb32 or rgba */
-QuicEncoder.prototype.quic_decode = function(buf, stride)
-{
-    var row;
+QuicEncoder.prototype.quic_decode = function(buf, stride) {
+    const { type, height, channels } = this;
+    const correlateZeroReset = () => {
+        channels.forEach(channel => {
+            channel.correlate_row.zero = 0;
+        });
+    };
 
-    switch (this.type)
-    {
+    const updateCorrelateRowZero = (channel) => {
+        channel.correlate_row.zero = channel.correlate_row.row[0];
+    };
+
+    const handleRGB32OrRGBA = (hasAlpha) => {
+        correlateZeroReset();
+        this.quic_rgb32_uncompress_row0(buf);
+
+        if (hasAlpha) {
+            channels[3].correlate_row.zero = 0;
+            this.quic_four_uncompress_row0(channels[3], buf);
+        }
+
+        this.rows_completed++;
+        for (let row = 1; row < height; row++) {
+            let prev = buf;
+            buf = prev.subarray(stride);
+
+            channels.slice(0, 3).forEach(updateCorrelateRowZero);
+            this.quic_rgb32_uncompress_row(prev, buf);
+
+            if (hasAlpha) {
+                updateCorrelateRowZero(channels[3]);
+                this.quic_four_uncompress_row(channels[3], prev, buf);
+            }
+
+            this.rows_completed++;
+        }
+    };
+
+    switch (type) {
         case Constants.QUIC_IMAGE_TYPE_RGB32:
         case Constants.QUIC_IMAGE_TYPE_RGB24:
-            this.channels[0].correlate_row.zero = 0;
-            this.channels[1].correlate_row.zero = 0;
-            this.channels[2].correlate_row.zero = 0;
-            this.quic_rgb32_uncompress_row0(buf);
+            handleRGB32OrRGBA(false);
+            break;
 
-            this.rows_completed++;
-            for (row = 1; row < this.height; row++)
-            {
-                var prev = buf;
-                buf = prev.subarray(stride);
-                this.channels[0].correlate_row.zero = this.channels[0].correlate_row.row[0];
-                this.channels[1].correlate_row.zero = this.channels[1].correlate_row.row[0];
-                this.channels[2].correlate_row.zero = this.channels[2].correlate_row.row[0];
-                this.quic_rgb32_uncompress_row(prev, buf);
-                this.rows_completed++;
-            };
-            break;
-        case Constants.QUIC_IMAGE_TYPE_RGB16:
-            console.log("quic: unsupported output format\n");
-            return false;
-            break;
         case Constants.QUIC_IMAGE_TYPE_RGBA:
-            this.channels[0].correlate_row.zero = 0;
-            this.channels[1].correlate_row.zero = 0;
-            this.channels[2].correlate_row.zero = 0;
-            this.quic_rgb32_uncompress_row0(buf);
-
-            this.channels[3].correlate_row.zero = 0;
-            this.quic_four_uncompress_row0(this.channels[3], buf);
-
-            this.rows_completed++;
-            for (row = 1; row < this.height; row++) {
-                var prev = buf;
-                buf = prev.subarray(stride);
-
-                this.channels[0].correlate_row.zero = this.channels[0].correlate_row.row[0];
-                this.channels[1].correlate_row.zero = this.channels[1].correlate_row.row[0];
-                this.channels[2].correlate_row.zero = this.channels[2].correlate_row.row[0];
-                this.quic_rgb32_uncompress_row(prev, buf);
-
-                this.channels[3].correlate_row.zero = this.channels[3].correlate_row.row[0];
-                this.quic_four_uncompress_row(encoder.channels[3], prev, buf);
-                this.rows_completed++;
-            }
+            handleRGB32OrRGBA(true);
             break;
 
+        case Constants.QUIC_IMAGE_TYPE_RGB16:
         case Constants.QUIC_IMAGE_TYPE_GRAY:
             console.log("quic: unsupported output format\n");
             return false;
-            break;
 
         case Constants.QUIC_IMAGE_TYPE_INVALID:
         default:
             console.log("quic: bad image type\n");
             return false;
     }
+
     return true;
-}
+};
+
 
 QuicEncoder.prototype.simple_quic_decode = function(buf) {
     const stride = 4;  // FIXME - proper stride calculation should be applied
