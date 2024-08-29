@@ -33,7 +33,7 @@ var Shift_state = -1;
 var Ctrl_state = -1;
 var Alt_state = -1;
 var Meta_state = -1;
-
+var CapsLock_state = -1;
 /*----------------------------------------------------------------------------
 **  SpiceInputsConn
 **      Drive the Spice Inputs channel (e.g. mouse + keyboard)
@@ -227,61 +227,51 @@ function update_modifier(isKeyDown, keyCode, spiceClient) {
     spiceClient.inputs.send_msg(message);
 }
 
-function check_and_update_modifiers(e, code, sc)
-{
-    if (Shift_state === -1)
-    {
-        Shift_state = e.shiftKey;
-        Ctrl_state = e.ctrlKey;
-        Alt_state = e.altKey;
-        Meta_state = e.metaKey;
+function check_and_update_modifiers(event, code, spiceClient) {
+    const keyMapping = {
+        [KeyNames.KEY_ShiftL]: 'Shift_state',
+        [KeyNames.KEY_Alt]: 'Alt_state',
+        [KeyNames.KEY_LCtrl]: 'Ctrl_state',
+        [KeyNames.KEY_CapsLock]: 'CapsLock_state',
+        [0xE0B5]: 'Meta_state',
+        [(0x80|KeyNames.KEY_ShiftL)]: 'Shift_state',
+        [(0x80|KeyNames.KEY_Alt)]: 'Alt_state',
+        [(0x80|KeyNames.KEY_LCtrl)]: 'Ctrl_state',
+        [(0x80|0xE0B5)]: 'Meta_state',
+        [(0x80|KeyNames.KEY_CapsLock)]: 'CapsLock_state'
+    };
+
+    if (Shift_state === -1) {
+        Shift_state = event.shiftKey;
+        Ctrl_state = event.ctrlKey;
+        Alt_state = event.altKey;
+        Meta_state = event.metaKey;
+        CapsLock_state = event.capsLockKey;
     }
 
-    if (code === KeyNames.KEY_ShiftL)
-        Shift_state = true;
-    else if (code === KeyNames.KEY_Alt)
-        Alt_state = true;
-    else if (code === KeyNames.KEY_LCtrl)
-        Ctrl_state = true;
-    else if (code === 0xE0B5)
-        Meta_state = true;
-    else if (code === (0x80|KeyNames.KEY_ShiftL))
-        Shift_state = false;
-    else if (code === (0x80|KeyNames.KEY_Alt))
-        Alt_state = false;
-    else if (code === (0x80|KeyNames.KEY_LCtrl))
-        Ctrl_state = false;
-    else if (code === (0x80|0xE0B5))
-        Meta_state = false;
+    if (keyMapping[code] !== undefined) {
+        const stateName = keyMapping[code];
+        window[stateName] = !(code & 0x80);
+    }
 
-    if (sc && sc.inputs && sc.inputs.state === "ready")
-    {
-        if (Shift_state != e.shiftKey)
-        {
-            console.log("Shift state out of sync");
-            update_modifier(e.shiftKey, KeyNames.KEY_ShiftL, sc);
-            Shift_state = e.shiftKey;
-        }
-        if (Alt_state != e.altKey)
-        {
-            console.log("Alt state out of sync");
-            update_modifier(e.altKey, KeyNames.KEY_Alt, sc);
-            Alt_state = e.altKey;
-        }
-        if (Ctrl_state != e.ctrlKey)
-        {
-            console.log("Ctrl state out of sync");
-            update_modifier(e.ctrlKey, KeyNames.KEY_LCtrl, sc);
-            Ctrl_state = e.ctrlKey;
-        }
-        if (Meta_state != e.metaKey)
-        {
-            console.log("Meta state out of sync");
-            update_modifier(e.metaKey, 0xE0B5, sc);
-            Meta_state = e.metaKey;
-        }
+    if (spiceClient?.inputs?.state === "ready") {
+        const stateChecks = [
+            { key: 'Shift_state', eventKey: event.shiftKey, keyName: KeyNames.KEY_ShiftL },
+            { key: 'Alt_state', eventKey: event.altKey, keyName: KeyNames.KEY_Alt },
+            { key: 'Ctrl_state', eventKey: event.ctrlKey, keyName: KeyNames.KEY_LCtrl },
+            { key: 'Meta_state', eventKey: event.metaKey, keyName: 0xE0B5 }
+        ];
+
+        stateChecks.forEach(({ key, eventKey, keyName }) => {
+            if (window[key] !== eventKey) {
+                console.log(`${key.replace('_state', '')} state out of sync`);
+                update_modifier(eventKey, keyName, spiceClient);
+                window[key] = eventKey;
+            }
+        });
     }
 }
+
 
 export {
   SpiceInputsConn,
