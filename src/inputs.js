@@ -210,23 +210,21 @@ function sendCtrlAltDel(sc) {
     }
 }
 
-function update_modifier(state, code, sc)
-{
-    var msg = new Messages.SpiceMiniData();
-    if (!state)
-    {
-        var key = new Messages.SpiceMsgcKeyUp()
-        key.code =(0x80|code);
-        msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_UP, key);
-    }
-    else
-    {
-        var key = new Messages.SpiceMsgcKeyDown()
-        key.code = code;
-        msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_DOWN, key);
-    }
+function update_modifier(isKeyDown, keyCode, spiceClient) {
+    const message = new Messages.SpiceMiniData();
+    const keyMessage = isKeyDown 
+        ? new Messages.SpiceMsgcKeyDown() 
+        : new Messages.SpiceMsgcKeyUp();
 
-    sc.inputs.send_msg(msg);
+    keyMessage.code = isKeyDown ? keyCode : (0x80 | keyCode);
+
+    const messageType = isKeyDown 
+        ? Constants.SPICE_MSGC_INPUTS_KEY_DOWN 
+        : Constants.SPICE_MSGC_INPUTS_KEY_UP;
+
+    message.build_msg(messageType, keyMessage);
+
+    spiceClient.inputs.send_msg(message);
 }
 
 function check_and_update_modifiers(e, code, sc)
