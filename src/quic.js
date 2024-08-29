@@ -1293,21 +1293,28 @@ SpiceQuic.prototype =
     },
 }
 
-function convert_spice_quic_to_web(context, spice_quic)
-{
-    var ret = context.createImageData(spice_quic.width, spice_quic.height);
-    var i;
-    for (i = 0; i < (ret.width * ret.height * 4); i+=4)
-    {
-        ret.data[i + 0] = spice_quic.outptr[i + 2];
-        ret.data[i + 1] = spice_quic.outptr[i + 1];
-        ret.data[i + 2] = spice_quic.outptr[i + 0];
-        if (spice_quic.type !== Constants.QUIC_IMAGE_TYPE_RGBA)
-            ret.data[i + 3] = 255;
-        else
-            ret.data[i + 3] = 255 - spice_quic.outptr[i + 3];
+function convert_spice_quic_to_web(context, spice_quic) {
+    var width = spice_quic.width;
+    var height = spice_quic.height;
+    var ret = context.createImageData(width, height);
+    var destData = ret.data;
+    var srcData = spice_quic.outptr;
+    var dataLength = width * height * 4;
+    var isRgba = (spice_quic.type === Constants.QUIC_IMAGE_TYPE_RGBA);
+
+    for (var i = 0; i < dataLength; i += 4) {
+        var rIndex = i + 0;
+        var gIndex = i + 1;
+        var bIndex = i + 2;
+        var aIndex = i + 3;
+
+        destData[rIndex] = srcData[bIndex];     // R
+        destData[gIndex] = srcData[gIndex];     // G
+        destData[bIndex] = srcData[rIndex];     // B
+        destData[aIndex] = isRgba ? (255 - srcData[aIndex]) : 255; // A
     }
-   return ret;
+
+    return ret;
 }
 
 /* Module initialization */
