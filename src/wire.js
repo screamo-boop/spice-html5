@@ -82,30 +82,24 @@ SpiceWireReader.prototype =
 
         /* Optimization - All it takes is one combine  */
         while (this.size >= this.needed) {
-            var count = 0;
-            var frame = new ArrayBuffer(this.needed);
-            var view = new Uint8Array(frame);
+            let count = 0;
+            const frame = new ArrayBuffer(this.needed);
+            const view = new Uint8Array(frame);
 
             while (count < frame.byteLength && this.buffers.length > 0) {
-                var buf = this.buffers.shift();
-                if (!buf) {
-                    return;
-                }
-                var uint8 = new Uint8Array(buf);
-                var step = frame.byteLength - count;
+                const buf = this.buffers.shift();
+                const uint8 = new Uint8Array(buf);
+                const step = frame.byteLength - count;
 
-                /* Optimization - use dataview.set() instead of combine_array_buffers() */
                 if (uint8.length <= step) {
                     view.set(uint8, count);
                     count += uint8.length;
                     this.size -= uint8.length;
                 } else {
-                    var temp = uint8.slice(0, step);
-                    view.set(temp, count);
-                    count += temp.length;
-                    this.size -= temp.length;
-            
+                    view.set(uint8.slice(0, step), count);
                     this.buffers.unshift(uint8.slice(step));
+                    count += step;
+                    this.size -= step;
                 }
             }
 
