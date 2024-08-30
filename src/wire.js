@@ -62,22 +62,21 @@ SpiceWireReader.prototype =
 
         /* Optimization - if we have just one inbound block, and it's
             suitable for our needs, just use it.  */
-        if (this.buffers.length == 0 && mb.byteLength >= this.needed)
-        {
-            if (mb.byteLength > this.needed)
-            {
-                this.size = mb.byteLength - this.needed;
-                this.buffers.push(mb.slice(this.needed));
-                mb = mb.slice(0, this.needed);
+            if (this.buffers.length === 0 && mb.byteLength >= this.needed) {
+                if (mb.byteLength > this.needed) {
+                    // Since we're slicing mb when byteLength exceeds needed, slice directly
+                    // without reallocating memory unnecessarily.
+                    this.buffers.push(mb.slice(this.needed));
+                    this.size = mb.byteLength - this.needed;
+                }
+                // Directly use the required slice of mb for the callback
+                const toProcess = mb.slice(0, this.needed);
+                this.callback.call(this.sc, toProcess, this.saved_msg_header);
+            } else {
+                // Push the complete buffer if conditions are not met for immediate processing
+                this.buffers.push(mb);
+                this.size += mb.byteLength;
             }
-            this.callback.call(this.sc, mb,
-                        this.saved_msg_header || undefined);
-        }
-        else
-        {
-            this.buffers.push(mb);
-            this.size += mb.byteLength;
-        }
 
 
         /* Optimization - All it takes is one combine  */
