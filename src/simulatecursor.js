@@ -63,70 +63,68 @@ unknown_cursor: function(sha1, curdata)
     }
 },
 
-simulate_cursor: function (spicecursor, cursor, screen, pngstr)
-{
-    var cursor_sha = hex_sha1(pngstr + ' ' + cursor.header.hot_spot_x + ' ' + cursor.header.hot_spot_y);
-    if (typeof SpiceSimulateCursor.cursors != 'undefined')
-        if (typeof SpiceSimulateCursor.cursors[cursor_sha] != 'undefined')
-        {
-            var curstr = 'url(' + SpiceSimulateCursor.cursors[cursor_sha] + '), default';
-            screen.style.cursor = curstr;
-        }
+simulate_cursor: function (spicecursor, cursor, screen, pngstr) {
+    const cursor_sha = hex_sha1(`${pngstr} ${cursor.header.hot_spot_x} ${cursor.header.hot_spot_y}`);
 
-    if (window.getComputedStyle(screen, null).cursor == 'auto')
-    {
+    if (SpiceSimulateCursor.cursors && SpiceSimulateCursor.cursors[cursor_sha]) {
+        screen.style.cursor = `url(${SpiceSimulateCursor.cursors[cursor_sha]}), default`;
+    } else if (window.getComputedStyle(screen, null).cursor === 'auto') {
         SpiceSimulateCursor.unknown_cursor(cursor_sha,
             SpiceSimulateCursor.create_icondir(cursor.header.width, cursor.header.height,
             cursor.data.byteLength, cursor.header.hot_spot_x, cursor.header.hot_spot_y) + pngstr);
 
         document.getElementById(spicecursor.parent.screen_id).style.cursor = 'none';
-        if (! spicecursor.spice_simulated_cursor)
-        {
-            spicecursor.spice_simulated_cursor = document.createElement('img');
 
-            spicecursor.spice_simulated_cursor.style.position = 'absolute';
-            spicecursor.spice_simulated_cursor.style.display = 'none';
-            spicecursor.spice_simulated_cursor.style.overflow = 'hidden';
+        if (!spicecursor.spice_simulated_cursor) {
+            const simulatedCursor = document.createElement('img');
+            simulatedCursor.style.position = 'absolute';
+            simulatedCursor.style.display = 'none';
+            simulatedCursor.style.overflow = 'hidden';
+            simulatedCursor.spice_screen = document.getElementById(spicecursor.parent.screen_id);
 
-            spicecursor.spice_simulated_cursor.spice_screen = document.getElementById(spicecursor.parent.screen_id);
+            simulatedCursor.addEventListener('mousemove', SpiceSimulateCursor.handle_sim_mousemove);
 
-            spicecursor.spice_simulated_cursor.addEventListener('mousemove', SpiceSimulateCursor.handle_sim_mousemove);
-
-            spicecursor.spice_simulated_cursor.spice_screen.appendChild(spicecursor.spice_simulated_cursor);
+            simulatedCursor.spice_screen.appendChild(simulatedCursor);
+            spicecursor.spice_simulated_cursor = simulatedCursor;
         }
 
-        spicecursor.spice_simulated_cursor.src = 'data:image/png,' + pngstr;
-
+        spicecursor.spice_simulated_cursor.src = `data:image/png,${pngstr}`;
         spicecursor.spice_simulated_cursor.spice_hot_x = cursor.header.hot_spot_x;
         spicecursor.spice_simulated_cursor.spice_hot_y = cursor.header.hot_spot_y;
-
-        spicecursor.spice_simulated_cursor.style.pointerEvents = "none";
-    }
-    else
-    {
-        if (spicecursor.spice_simulated_cursor)
-        {
-            spicecursor.spice_simulated_cursor.spice_screen.removeChild(spicecursor.spice_simulated_cursor);
-            delete spicecursor.spice_simulated_cursor;
-        }
+        spicecursor.spice_simulated_cursor.style.pointerEvents = 'none';
+    } else if (spicecursor.spice_simulated_cursor) {
+        spicecursor.spice_simulated_cursor.spice_screen.removeChild(spicecursor.spice_simulated_cursor);
+        delete spicecursor.spice_simulated_cursor;
     }
 },
 
-handle_sim_mousemove: function(e)
-{
-    var retval;
-    var f = SpiceSimulateCursor.duplicate_mouse_event(e, this.spice_screen);
-    return this.spice_screen.dispatchEvent(f);
+
+handle_sim_mousemove: function (e) {
+    const duplicatedEvent = SpiceSimulateCursor.duplicate_mouse_event(e, this.spice_screen);
+    return this.spice_screen.dispatchEvent(duplicatedEvent);
 },
 
-duplicate_mouse_event: function(e, target)
-{
-    var evt = document.createEvent("mouseevent");
-    evt.initMouseEvent(e.type, true, true, e.view, e.detail,
-        e.screenX, e.screenY, e.clientX, e.clientY,
-        e.ctrlKey, e.altKey, e.shiftKey, e.metaKey, e.button, e.relatedTarget);
-    return evt;
+duplicate_mouse_event: function (e, target) {
+    const eventOptions = {
+        bubbles: true,
+        cancelable: true,
+        view: e.view,
+        detail: e.detail,
+        screenX: e.screenX,
+        screenY: e.screenY,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+        metaKey: e.metaKey,
+        button: e.button,
+        relatedTarget: e.relatedTarget
+    };
+
+    return new MouseEvent(e.type, eventOptions);
 },
+
 
 ICONDIR: function ()
 {
@@ -142,65 +140,49 @@ ICONDIRENTRY: function(width, height, bytes, hot_x, hot_y)
 },
 
 
-create_icondir: function (width, height, bytes, hot_x, hot_y)
-{
-    var i;
-    var header = new SpiceSimulateCursor.ICONDIR();
-    var entry = new SpiceSimulateCursor.ICONDIRENTRY(width, height, bytes, hot_x, hot_y);
+create_icondir: function (width, height, bytes, hot_x, hot_y) {
+    const header = new SpiceSimulateCursor.ICONDIR();
+    const entry = new SpiceSimulateCursor.ICONDIRENTRY(width, height, bytes, hot_x, hot_y);
 
-    var mb = new ArrayBuffer(header.buffer_size() + entry.buffer_size());
-    var at = header.to_buffer(mb);
+    const mb = new ArrayBuffer(header.buffer_size() + entry.buffer_size());
+    let at = header.to_buffer(mb);
     at = entry.to_buffer(mb, at);
 
-    var u8 = new Uint8Array(mb);
-    var str = "";
-    for (i = 0; i < at; i++)
-    {
-        str += "%";
-        if (u8[i] < 16)
-            str += "0";
-        str += u8[i].toString(16);
-    }
-    return str;
+    const u8 = new Uint8Array(mb);
+    const hexArray = [...u8].slice(0, at).map(byte => `%${byte.toString(16).padStart(2, '0')}`);
+
+    return hexArray.join('');
 },
 
 };
 
-SpiceSimulateCursor.ICONDIR.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var dv = new SpiceDataView(a);
+SpiceSimulateCursor.ICONDIR.prototype = {
+    to_buffer: function (a, at = 0) {
+        const dv = new DataView(a);
         dv.setUint16(at, 0, true); at += 2;
         dv.setUint16(at, 2, true); at += 2;
         dv.setUint16(at, 1, true); at += 2;
         return at;
     },
-    buffer_size: function()
-    {
+    buffer_size: function () {
         return 6;
     }
 };
 
-SpiceSimulateCursor.ICONDIRENTRY.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var dv = new SpiceDataView(a);
-        dv.setUint8(at, this.width); at++;
-        dv.setUint8(at, this.height); at++;
-        dv.setUint8(at, 0); at++;  /* color palette count, unused */
-        dv.setUint8(at, 0); at++;  /* reserved */
+SpiceSimulateCursor.ICONDIRENTRY.prototype = {
+    to_buffer: function (a, at = 0) {
+        const dv = new DataView(a);
+        dv.setUint8(at++, this.width);
+        dv.setUint8(at++, this.height);
+        dv.setUint8(at++, 0);  // color palette count, unused
+        dv.setUint8(at++, 0);  // reserved
         dv.setUint16(at, this.hot_x, true); at += 2;
         dv.setUint16(at, this.hot_y, true); at += 2;
         dv.setUint32(at, this.bytes, true); at += 4;
-        dv.setUint32(at, at + 4, true); at += 4;  /* Offset to bytes */
+        dv.setUint32(at, at + 4, true); at += 4;  // Offset to bytes
         return at;
     },
-    buffer_size: function()
-    {
+    buffer_size: function () {
         return 16;
     }
 };
