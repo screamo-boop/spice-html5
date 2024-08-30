@@ -319,7 +319,7 @@ SpiceMsgChannels.prototype =
     {
         at = at || 0;
         var i;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         this.num_of_channels = dv.getUint32(at, true); at += 4;
         for (i = 0; i < this.num_of_channels; i++)
         {
@@ -750,7 +750,7 @@ SpiceMsgDisplayDrawFill.prototype =
     from_buffer: function(a, at)
     {
         at = at || 0;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         this.base = new SpiceMsgDisplayBase;
         at = this.base.from_dv(dv, at, a);
         this.data = new SpiceFill;
@@ -768,7 +768,7 @@ SpiceMsgDisplayCopyBits.prototype =
     from_buffer: function(a, at)
     {
         at = at || 0;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         this.base = new SpiceMsgDisplayBase;
         at = this.base.from_dv(dv, at, a);
         this.src_pos = new SpicePoint;
@@ -787,7 +787,7 @@ SpiceMsgSurfaceCreate.prototype =
     from_buffer: function(a, at)
     {
         at = at || 0;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         this.surface = new SpiceSurface;
         return this.surface.from_dv(dv, at, a);
     },
@@ -1156,7 +1156,7 @@ SpiceMsgDisplayStreamData.prototype =
     from_buffer: function(a, at)
     {
         at = at || 0;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         this.base = new SpiceStreamDataHeader;
         at = this.base.from_dv(dv, at, a);
         this.data_size = dv.getUint32(at, true); at += 4;
@@ -1174,7 +1174,7 @@ SpiceMsgDisplayStreamDataSized.prototype =
     from_buffer: function(a, at)
     {
         at = at || 0;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         this.base = new SpiceStreamDataHeader;
         at = this.base.from_dv(dv, at, a);
         this.width = dv.getUint32(at, true); at += 4;
@@ -1197,7 +1197,7 @@ SpiceMsgDisplayStreamClip.prototype =
     from_buffer: function(a, at)
     {
         at = at || 0;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         this.id = dv.getUint32(at, true); at += 4;
         this.clip = new SpiceClip;
         this.clip.from_dv(dv, at, a);
