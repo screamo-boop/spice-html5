@@ -43,16 +43,11 @@ var EMPTY_GIF_IMAGE = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs
 **--------------------------------------------------------------------------*/
 function combine_array_buffers(a1, a2)
 {
-    var in1 = new Uint8Array(a1);
-    var in2 = new Uint8Array(a2);
-    var ret = new ArrayBuffer(a1.byteLength + a2.byteLength);
-    var out = new Uint8Array(ret);
-    var o = 0;
-    var i;
-    for (i = 0; i < in1.length; i++)
-        out[o++] = in1[i];
-    for (i = 0; i < in2.length; i++)
-        out[o++] = in2[i];
+    const ret = new ArrayBuffer(a1.byteLength + a2.byteLength);
+    const out = new Uint8Array(ret);
+    
+    out.set(new Uint8Array(a1), 0);
+    out.set(new Uint8Array(a2), a1.byteLength);
 
     return ret;
 }
@@ -60,50 +55,48 @@ function combine_array_buffers(a1, a2)
 /*----------------------------------------------------------------------------
 **  hexdump_buffer
 **--------------------------------------------------------------------------*/
-function hexdump_buffer(a)
-{
-    var mg = new Uint8Array(a);
-    var hex = "";
-    var str = "";
-    var last_zeros = 0;
-    for (var i = 0; i < mg.length; i++)
-    {
-        var h = Number(mg[i]).toString(16);
-        if (h.length == 1)
-            hex += "0";
-        hex += h + " ";
+function hexdump_buffer(a) {
+    const mg = new Uint8Array(a);
+    let hexArray = [];
+    let strArray = [];
+    let lastZeros = 0;
+    let i = 0;
 
-        if (mg[i] == 10 || mg[i] == 13 || mg[i] == 8)
-            str += ".";
-        else
-            str += String.fromCharCode(mg[i]);
+    while (i < mg.length) {
+        const byte = mg[i];
+        hexArray.push((byte < 16 ? '0' : '') + byte.toString(16));
 
-        if ((i % 16 == 15) || (i == (mg.length - 1)))
-        {
-            while (i % 16 != 15)
-            {
-                hex += "   ";
+        strArray.push((byte === 10 || byte === 13 || byte === 8) ? '.' : String.fromCharCode(byte));
+
+        if ((i % 16 === 15) || (i === mg.length - 1)) {
+            while (i % 16 !== 15) {
+                hexArray.push('  ');
                 i++;
             }
 
-            if (last_zeros == 0)
-                console.log(hex + " | " + str);
+            const hexLine = hexArray.join(" ");
+            const strLine = strArray.join("");
 
-            if (hex == "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ")
-            {
-                if (last_zeros == 1)
-                {
-                    console.log(".");
-                    last_zeros++;
-                }
-                else if (last_zeros == 0)
-                    last_zeros++;
+            if (lastZeros === 0) {
+                console.log(hexLine + " | " + strLine);
             }
-            else
-                last_zeros = 0;
 
-            hex = str = "";
+            if (hexLine === "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ") {
+                if (lastZeros === 1) {
+                    console.log(".");
+                    lastZeros++;
+                } else if (lastZeros === 0) {
+                    lastZeros++;
+                }
+            } else {
+                lastZeros = 0;
+            }
+
+            hexArray.length = 0;
+            strArray.length = 0;
         }
+
+        i++;
     }
 }
 
@@ -252,46 +245,45 @@ DOM_scanmap[189]                = KeyNames.KEY_Minus;
 DOM_scanmap[187]                = KeyNames.KEY_Equal;
 DOM_scanmap[186]                = KeyNames.KEY_SemiColon;
 
-function get_scancode(keyCode, code)
-{
-    if (code_to_scancode[code] !== undefined) {
+function get_scancode(keyCode, code) {
+    if (code_to_scancode.hasOwnProperty(code)) {
         return code_to_scancode[code];
     }
 
-    if (common_scanmap[keyCode] === undefined)
-    {
-        if (navigator.userAgent.indexOf("Firefox") != -1)
-            return firefox_scanmap[keyCode];
-        else
-            return DOM_scanmap[keyCode];
+    const scanmap = common_scanmap[keyCode];
+    if (scanmap !== undefined) {
+        return scanmap;
     }
-    else
-        return common_scanmap[keyCode];
+
+    const userAgent = navigator.userAgent;
+    const isFirefox = userAgent.includes("Firefox");
+
+    return isFirefox ? firefox_scanmap[keyCode] : DOM_scanmap[keyCode];
 }
 
-function keycode_to_start_scan(keyCode, code)
-{
-    var scancode = get_scancode(keyCode, code);
-    if (scancode === undefined)
-    {
-        alert('no map for ' + keyCode);
+function toScanCode(keyCode, code, alertOnUndefined = false) {
+    const scancode = get_scancode(keyCode, code);
+    if (scancode === undefined) {
+        if (alertOnUndefined) {
+            alert('no map for ' + keyCode);
+        }
         return 0;
     }
-
     return scancode;
 }
 
-function keycode_to_end_scan(keyCode, code)
-{
-    var scancode = get_scancode(keyCode, code);
-    if (scancode === undefined)
-        return 0;
+function keycode_to_start_scan(keyCode, code) {
+    return toScanCode(keyCode, code, true);
+}
 
-    if (scancode < 0x100) {
-        return scancode | 0x80;
-    } else {
-        return scancode | 0x8000;
+function keycode_to_end_scan(keyCode, code) {
+    const scancode = toScanCode(keyCode, code);
+    if (scancode === 0) {
+        return 0;
     }
+
+    const mask = (scancode < 0x100) ? 0x80 : 0x8000;
+    return scancode | mask;
 }
 
 function dump_media_element(m)
