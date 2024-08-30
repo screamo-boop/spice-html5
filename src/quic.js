@@ -1154,19 +1154,16 @@ QuicEncoder.prototype.quic_four_uncompress_row_seg = function (channel,
     }
 }
 
-QuicEncoder.prototype.quic_four_uncompress_row = function(channel, prev_row,
-                                                        cur_row)
-{
-    var bpc = 8;
-    var bpc_mask = 0xff;
-    var correlate_row = channel.correlate_row;
-    var pos = 0;
-    var width = this.width;
+QuicEncoder.prototype.quic_four_uncompress_row = function(channel, prev_row, cur_row) {
+    const bpc = 8;
+    const bpc_mask = 0xff;
+    const correlate_row = channel.correlate_row;
+    let pos = 0;
+    let width = this.width;
 
-    while ((wmimax > channel.state.wmidx) && (channel.state.wmileft <= width)) {
+    while (wmimax > channel.state.wmidx && channel.state.wmileft <= width) {
         if (channel.state.wmileft) {
-            this.quic_four_uncompress_row_seg(channel, correlate_row, prev_row, cur_row, pos,
-                                      pos + channel.state.wmileft, bpc, bpc_mask);
+            this.quic_four_uncompress_row_seg(channel, correlate_row, prev_row, cur_row, pos, pos + channel.state.wmileft, bpc, bpc_mask);
             pos += channel.state.wmileft;
             width -= channel.state.wmileft;
         }
@@ -1176,9 +1173,8 @@ QuicEncoder.prototype.quic_four_uncompress_row = function(channel, prev_row,
         channel.state.wmileft = wminext;
     }
 
-    if (width) {
-        this.quic_four_uncompress_row_seg(channel, correlate_row, prev_row, cur_row, pos,
-                                  pos + width, bpc, bpc_mask);
+    if (width > 0) {
+        this.quic_four_uncompress_row_seg(channel, correlate_row, prev_row, cur_row, pos, pos + width, bpc, bpc_mask);
         if (wmimax > channel.state.wmidx) {
             channel.state.wmileft -= width;
         }
