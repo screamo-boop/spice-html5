@@ -997,19 +997,25 @@ QuicEncoder.prototype.quic_four_uncompress_row0_seg = function (channel, i,
     channel.state.waitcnt = stopidx - end;
 }
 
-QuicEncoder.prototype.quic_four_uncompress_row0 = function(channel, cur_row)
-{
-    var bpc = 8;
-    var bpc_mask = 0xff;
-    var correlate_row = channel.correlate_row;
-    var pos = 0;
-    var width = this.width;
+QuicEncoder.prototype.quic_four_uncompress_row0 = function(channel, cur_row) {
+    const bpc = 8;
+    const bpc_mask = 0xff;
+    const correlate_row = channel.correlate_row;
+    let pos = 0;
+    let width = this.width;
 
-    while ((wmimax > channel.state.wmidx) && (channel.state.wmileft <= width)) {
+    while (wmimax > channel.state.wmidx && channel.state.wmileft <= width) {
         if (channel.state.wmileft) {
-            this.quic_four_uncompress_row0_seg(channel, pos, correlate_row, cur_row,
-                                       pos + channel.state.wmileft, bppmask[channel.state.wmidx],
-                                       bpc, bpc_mask);
+            this.quic_four_uncompress_row0_seg(
+                channel, 
+                pos, 
+                correlate_row, 
+                cur_row,
+                pos + channel.state.wmileft, 
+                bppmask[channel.state.wmidx],
+                bpc, 
+                bpc_mask
+            );
             pos += channel.state.wmileft;
             width -= channel.state.wmileft;
         }
@@ -1020,13 +1026,22 @@ QuicEncoder.prototype.quic_four_uncompress_row0 = function(channel, cur_row)
     }
 
     if (width) {
-        this.quic_four_uncompress_row0_seg(channel, pos, correlate_row, cur_row, pos + width,
-                                   bppmask[channel.state.wmidx], bpc, bpc_mask);
+        this.quic_four_uncompress_row0_seg(
+            channel, 
+            pos, 
+            correlate_row, 
+            cur_row, 
+            pos + width,
+            bppmask[channel.state.wmidx], 
+            bpc, 
+            bpc_mask
+        );
         if (wmimax > channel.state.wmidx) {
             channel.state.wmileft -= width;
         }
     }
 }
+
 
 QuicEncoder.prototype.quic_four_uncompress_row_seg = function (channel,
                                       correlate_row, prev_row, cur_row, i,
