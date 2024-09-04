@@ -1,8 +1,8 @@
-Spice Javascript client
+# Spice Javascript client
 
-Instructions and status as of August, 2016.
+Instructions and status as of August, 2024.
 
-Requirements:
+## Requirements:
 
   1.  Modern Firefox or Chrome (IE will work, but badly)
 
@@ -19,7 +19,7 @@ Requirements:
   3.  A spice server
 
 
-Optional:
+## Optional:
   1.  A web server
 
       With firefox, you can just open file:///your-path-to-spice.html-here
@@ -28,7 +28,7 @@ Optional:
       serve the files from a web server.
 
 
-Steps:
+## Steps:
 
   1.  Start the spice server
 
@@ -38,7 +38,7 @@ Steps:
   3.  Fire up spice.html, set host + port + password, and click start
 
 
-Status:
+## Status:
 
   The TODO file should be a fairly comprehensive list of tasks
   required to make this client more fully functional.
