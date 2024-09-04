@@ -25,99 +25,67 @@
 **    We should use DataView if we have it, because it *has* to
 **    be faster than this code
 **--------------------------------------------------------------------------*/
-function SpiceDataView(buffer, byteOffset, byteLength)
-{
-    if (byteOffset !== undefined)
-    {
-        if (byteLength !== undefined)
-            this.u8 = new Uint8Array(buffer, byteOffset, byteLength);
-        else
-            this.u8 = new Uint8Array(buffer, byteOffset);
-    }
-    else
-        this.u8 = new Uint8Array(buffer);
-};
+function SpiceDataView(buffer, byteOffset = 0, byteLength) {
+    this.u8 = new Uint8Array(buffer, byteOffset, byteLength);
+}
 
 SpiceDataView.prototype = {
-    getUint8:  function(byteOffset)
-    {
+    getUint8: function (byteOffset) {
         return this.u8[byteOffset];
     },
-    getUint16:  function(byteOffset, littleEndian)
-    {
-        var low = 1, high = 0;
-        if (littleEndian)
-        {
-            low = 0;
-            high = 1;
+    getUint16: function (byteOffset, littleEndian = false) {
+        const b0 = this.u8[byteOffset];
+        const b1 = this.u8[byteOffset + 1];
+        return littleEndian ? (b1 << 8) | b0 : (b0 << 8) | b1;
+    },
+    getUint32: function (byteOffset, littleEndian = false) {
+        const b0 = this.getUint16(byteOffset, littleEndian);
+        const b1 = this.getUint16(byteOffset + 2, littleEndian);
+        return littleEndian ? (b1 << 16) | b0 : (b0 << 16) | b1;
+    },
+    getUint64: function (byteOffset, littleEndian = false) {
+        const b0 = this.getUint32(byteOffset, littleEndian);
+        const b1 = this.getUint32(byteOffset + 4, littleEndian);
+        return littleEndian ? BigInt((b1 << 32) | b0) : BigInt((b0 << 32) | b1);
+    },
+    setUint8: function (byteOffset, value) {
+        this.u8[byteOffset] = value & 0xFF;
+    },
+    setUint16: function (byteOffset, value, littleEndian = false) {
+        const b0 = (value >> 8) & 0xFF;
+        const b1 = value & 0xFF;
+        if (littleEndian) {
+            this.u8[byteOffset] = b1;
+            this.u8[byteOffset + 1] = b0;
+        } else {
+            this.u8[byteOffset] = b0;
+            this.u8[byteOffset + 1] = b1;
         }
+    },
+    setUint32: function (byteOffset, value, littleEndian = false) {
+        const b0 = (value >> 16) & 0xFFFF;
+        const b1 = value & 0xFFFF;
+        if (littleEndian) {
+            this.setUint16(byteOffset, b1, littleEndian);
+            this.setUint16(byteOffset + 2, b0, littleEndian);
+        } else {
+            this.setUint16(byteOffset, b0, littleEndian);
+            this.setUint16(byteOffset + 2, b1, littleEndian);
+        }
+    },
+    setUint64: function (byteOffset, value, littleEndian = false) {
+        const b0 = Number((BigInt(value) >> BigInt(32)) & BigInt(0xFFFFFFFF));
+        const b1 = Number(BigInt(value) & BigInt(0xFFFFFFFF));
+        if (littleEndian) {
+            this.setUint32(byteOffset, b1, littleEndian);
+            this.setUint32(byteOffset + 4, b0, littleEndian);
+        } else {
+            this.setUint32(byteOffset, b0, littleEndian);
+            this.setUint32(byteOffset + 4, b1, littleEndian);
+        }
+    },
+};
 
-        return (this.u8[byteOffset + high] << 8) | this.u8[byteOffset + low];
-    },
-    getUint32:  function(byteOffset, littleEndian)
-    {
-        var low = 2, high = 0;
-        if (littleEndian)
-        {
-            low = 0;
-            high = 2;
-        }
-
-        return (this.getUint16(byteOffset + high, littleEndian) << 16) |
-                this.getUint16(byteOffset + low, littleEndian);
-    },
-    getUint64: function (byteOffset, littleEndian)
-    {
-        var low = 4, high = 0;
-        if (littleEndian)
-        {
-            low = 0;
-            high = 4;
-        }
-
-        return (this.getUint32(byteOffset + high, littleEndian) << 32) |
-                this.getUint32(byteOffset + low, littleEndian);
-    },
-    setUint8:  function(byteOffset, b)
-    {
-        this.u8[byteOffset] = (b & 0xff);
-    },
-    setUint16:  function(byteOffset, i, littleEndian)
-    {
-        var low = 1, high = 0;
-        if (littleEndian)
-        {
-            low = 0;
-            high = 1;
-        }
-        this.u8[byteOffset + high] = (i & 0xffff) >> 8;
-        this.u8[byteOffset + low]  = (i & 0x00ff);
-    },
-    setUint32:  function(byteOffset, w, littleEndian)
-    {
-        var low = 2, high = 0;
-        if (littleEndian)
-        {
-            low = 0;
-            high = 2;
-        }
-
-        this.setUint16(byteOffset + high, (w & 0xffffffff) >> 16, littleEndian);
-        this.setUint16(byteOffset + low,  (w & 0x0000ffff), littleEndian);
-    },
-    setUint64:  function(byteOffset, w, littleEndian)
-    {
-        var low = 4, high = 0;
-        if (littleEndian)
-        {
-            low = 0;
-            high = 4;
-        }
-
-        this.setUint32(byteOffset + high, (w & 0xffffffffffffffff) >> 32, littleEndian);
-        this.setUint32(byteOffset + low,  (w & 0x00000000ffffffff), littleEndian);
-    },
-}
 
 export {
   SpiceDataView,
