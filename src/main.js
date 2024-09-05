@@ -63,19 +63,20 @@ import { resize_helper, handle_resize } from './resize.js';
 **      browser, including WebSocket and WebSocket.binaryType == arraybuffer
 **
 **--------------------------------------------------------------------------*/
-function SpiceMainConn() {
-    if (typeof WebSocket === "undefined") {
-        throw new Error("WebSocket unavailable. You need to use a different browser.");
-    }
+function SpiceMainConn()
+{
+    if (typeof WebSocket === "undefined")
+        throw new Error("WebSocket unavailable.  You need to use a different browser.");
 
     SpiceConn.apply(this, arguments);
 
     this.agent_msg_queue = [];
-    this.file_xfer_tasks = Object.create(null);
+    this.file_xfer_tasks = {};
     this.file_xfer_task_id = 0;
     this.file_xfer_read_queue = [];
     this.ports = [];
 }
+
 SpiceMainConn.prototype = Object.create(SpiceConn.prototype);
 SpiceMainConn.prototype.process_channel_message = function(msg)
 {
@@ -321,143 +322,154 @@ SpiceMainConn.prototype.stop = function(msg)
     this.extra_channels = undefined;
 }
 
-SpiceMainConn.prototype.send_agent_message_queue = function(message) {
-    if (!this.agent_connected) return;
+SpiceMainConn.prototype.send_agent_message_queue = function(message)
+{
+    if (!this.agent_connected)
+        return;
 
-    if (message) this.agent_msg_queue.push(message);
+    if (message)
+        this.agent_msg_queue.push(message);
 
-    const maxMessagesToProcess = Math.min(this.agent_tokens, this.agent_msg_queue.length);
-
-    for (let i = 0; i < maxMessagesToProcess; i++) {
-        const msg = this.agent_msg_queue.shift();
-        this.send_msg(msg);
+    while (this.agent_tokens > 0 && this.agent_msg_queue.length > 0)
+    {
+        var mr = this.agent_msg_queue.shift();
+        this.send_msg(mr);
         this.agent_tokens--;
     }
 }
 
-SpiceMainConn.prototype.send_agent_message = function(type, message) {
-    const agent_data = new Messages.SpiceMsgcMainAgentData(type, message);
-    const maxsize = Constants.VD_AGENT_MAX_DATA_SIZE - Messages.SpiceMiniData.prototype.buffer_size();
-    const buffer_size = agent_data.buffer_size();
-    const data = new ArrayBuffer(buffer_size);
-    
+SpiceMainConn.prototype.send_agent_message = function(type, message)
+{
+    var agent_data = new Messages.SpiceMsgcMainAgentData(type, message);
+    var sb = 0, maxsize = Constants.VD_AGENT_MAX_DATA_SIZE - Messages.SpiceMiniData.prototype.buffer_size();
+    var data = new ArrayBuffer(agent_data.buffer_size());
     agent_data.to_buffer(data);
-
-    for (let sb = 0; sb < buffer_size; sb += maxsize) {
-        const eb = Math.min(sb + maxsize, buffer_size);
-        const mr = new Messages.SpiceMiniData();
+    while (sb < agent_data.buffer_size())
+    {
+        var eb = Math.min(sb + maxsize, agent_data.buffer_size());
+        var mr = new Messages.SpiceMiniData();
         mr.type = Constants.SPICE_MSGC_MAIN_AGENT_DATA;
         mr.size = eb - sb;
         mr.data = data.slice(sb, eb);
         this.send_agent_message_queue(mr);
+        sb = eb;
     }
 }
 
-
-SpiceMainConn.prototype.announce_agent_capabilities = function(request) {
-    const capabilityFlags = 
-        (1 << Constants.VD_AGENT_CAP_MOUSE_STATE) |
-        (1 << Constants.VD_AGENT_CAP_MONITORS_CONFIG) |
-        (1 << Constants.VD_AGENT_CAP_REPLY);
-
-    const caps = new Messages.VDAgentAnnounceCapabilities(request, capabilityFlags);
+SpiceMainConn.prototype.announce_agent_capabilities = function(request)
+{
+    var caps = new Messages.VDAgentAnnounceCapabilities(request, (1 << Constants.VD_AGENT_CAP_MOUSE_STATE) |
+                                                        (1 << Constants.VD_AGENT_CAP_MONITORS_CONFIG) |
+                                                        (1 << Constants.VD_AGENT_CAP_REPLY));
     this.send_agent_message(Constants.VD_AGENT_ANNOUNCE_CAPABILITIES, caps);
 }
 
-SpiceMainConn.prototype.resize_window = function(flags, width, height, depth, x, y) {
-    const monitorsConfig = new Messages.VDAgentMonitorsConfig(flags, width, height, depth, x, y);
-    this.send_agent_message(Constants.VD_AGENT_MONITORS_CONFIG, monitorsConfig);
+SpiceMainConn.prototype.resize_window = function(flags, width, height, depth, x, y)
+{
+    var monitors_config = new Messages.VDAgentMonitorsConfig(flags, width, height, depth, x, y);
+    this.send_agent_message(Constants.VD_AGENT_MONITORS_CONFIG, monitors_config);
 }
 
-SpiceMainConn.prototype.file_xfer_start = function(file) {
-    const taskId = this.file_xfer_task_id++;
-    
-    const task = new SpiceFileXferTask(taskId, file);
+SpiceMainConn.prototype.file_xfer_start = function(file)
+{
+    var task_id, xfer_start, task;
+
+    task_id = this.file_xfer_task_id++;
+    task = new SpiceFileXferTask(task_id, file);
     task.create_progressbar();
-    this.file_xfer_tasks[taskId] = task;
-
-    const xferStartMessage = new Messages.VDAgentFileXferStartMessage(taskId, file.name, file.size);
-    this.send_agent_message(Constants.VD_AGENT_FILE_XFER_START, xferStartMessage);
+    this.file_xfer_tasks[task_id] = task;
+    xfer_start = new Messages.VDAgentFileXferStartMessage(task_id, file.name, file.size);
+    this.send_agent_message(Constants.VD_AGENT_FILE_XFER_START, xfer_start);
 }
 
-
-SpiceMainConn.prototype.handle_file_xfer_status = function(file_xfer_status) {
-    const xfer_task = this.file_xfer_tasks[file_xfer_status.id];
-    if (!xfer_task) {
+SpiceMainConn.prototype.handle_file_xfer_status = function(file_xfer_status)
+{
+    var xfer_error, xfer_task;
+    if (!this.file_xfer_tasks[file_xfer_status.id])
+    {
         return;
     }
-
-    switch (file_xfer_status.result) {
+    xfer_task = this.file_xfer_tasks[file_xfer_status.id];
+    switch (file_xfer_status.result)
+    {
         case Constants.VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA:
             this.file_xfer_read(xfer_task);
             return;
         case Constants.VD_AGENT_FILE_XFER_STATUS_CANCELLED:
-            this.file_xfer_completed(xfer_task, "transfer is cancelled by spice agent");
-            return;
+            xfer_error = "transfer is cancelled by spice agent";
+            break;
         case Constants.VD_AGENT_FILE_XFER_STATUS_ERROR:
-            this.file_xfer_completed(xfer_task, "some errors occurred in the spice agent");
-            return;
+            xfer_error = "some errors occurred in the spice agent";
+            break;
         case Constants.VD_AGENT_FILE_XFER_STATUS_SUCCESS:
-            this.file_xfer_completed(xfer_task, null);
-            return;
+            break;
         default:
-            this.file_xfer_completed(xfer_task, "unhandled status type: " + file_xfer_status.result);
-            return;
+            xfer_error = "unhandled status type: " + file_xfer_status.result;
+            break;
     }
+
+    this.file_xfer_completed(xfer_task, xfer_error)
 }
 
-SpiceMainConn.prototype.file_xfer_read = function(file_xfer_task, start_byte = 0) {
-    const FILE_XFER_CHUNK_SIZE = 32 * Constants.VD_AGENT_MAX_DATA_SIZE;
+SpiceMainConn.prototype.file_xfer_read = function(file_xfer_task, start_byte)
+{
+    var FILE_XFER_CHUNK_SIZE = 32 * Constants.VD_AGENT_MAX_DATA_SIZE;
+    var _this = this;
+    var sb, eb;
+    var slice, reader;
 
-    if (!file_xfer_task || 
-        !this.file_xfer_tasks[file_xfer_task.id] || 
-        (start_byte > 0 && start_byte === file_xfer_task.file.size)) 
+    if (!file_xfer_task ||
+        !this.file_xfer_tasks[file_xfer_task.id] ||
+        (start_byte > 0 && start_byte == file_xfer_task.file.size))
     {
         return;
     }
 
-    if (file_xfer_task.cancelled) {
-        const xfer_status = new Messages.VDAgentFileXferStatusMessage(file_xfer_task.id, Constants.VD_AGENT_FILE_XFER_STATUS_CANCELLED);
+    if (file_xfer_task.cancelled)
+    {
+        var xfer_status = new Messages.VDAgentFileXferStatusMessage(file_xfer_task.id,
+                                                           Constants.VD_AGENT_FILE_XFER_STATUS_CANCELLED);
         this.send_agent_message(Constants.VD_AGENT_FILE_XFER_STATUS, xfer_status);
         delete this.file_xfer_tasks[file_xfer_task.id];
         return;
     }
 
-    const sb = start_byte;
-    const eb = Math.min(sb + FILE_XFER_CHUNK_SIZE, file_xfer_task.file.size);
+    sb = start_byte || 0,
+    eb = Math.min(sb + FILE_XFER_CHUNK_SIZE, file_xfer_task.file.size);
 
-    if (!this.agent_tokens) {
+    if (!this.agent_tokens)
+    {
         file_xfer_task.read_bytes = sb;
         this.file_xfer_read_queue.push(file_xfer_task);
         return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const xfer_data = new Messages.VDAgentFileXferDataMessage(file_xfer_task.id, e.target.result.byteLength, e.target.result);
-        this.send_agent_message(Constants.VD_AGENT_FILE_XFER_DATA, xfer_data);
-        this.file_xfer_read(file_xfer_task, eb);
+    reader = new FileReader();
+    reader.onload = function(e)
+    {
+        var xfer_data = new Messages.VDAgentFileXferDataMessage(file_xfer_task.id,
+                                                       e.target.result.byteLength,
+                                                       e.target.result);
+        _this.send_agent_message(Constants.VD_AGENT_FILE_XFER_DATA, xfer_data);
+        _this.file_xfer_read(file_xfer_task, eb);
         file_xfer_task.update_progressbar(eb);
     };
 
-    const slice = file_xfer_task.file.slice(sb, eb);
+    slice = file_xfer_task.file.slice(sb, eb);
     reader.readAsArrayBuffer(slice);
 }
 
-
-SpiceMainConn.prototype.file_xfer_completed = function(file_xfer_task, error) {
-    const taskId = file_xfer_task.id;
-
-    if (error) {
+SpiceMainConn.prototype.file_xfer_completed = function(file_xfer_task, error)
+{
+    if (error)
         this.log_err(error);
-    } else {
-        this.log_info(`transfer of '${file_xfer_task.file.name}' was successful`);
-    }
+    else
+        this.log_info("transfer of '" + file_xfer_task.file.name +"' was successful");
 
     file_xfer_task.remove_progressbar();
-    delete this.file_xfer_tasks[taskId];
-}
 
+    delete this.file_xfer_tasks[file_xfer_task.id];
+}
 
 SpiceMainConn.prototype.connect_agent = function()
 {
@@ -475,25 +487,27 @@ SpiceMainConn.prototype.connect_agent = function()
 
 }
 
-SpiceMainConn.prototype.handle_mouse_mode = function(current, supported) {
+SpiceMainConn.prototype.handle_mouse_mode = function(current, supported)
+{
     this.mouse_mode = current;
-
-    if (current !== Constants.SPICE_MOUSE_MODE_CLIENT && (supported & Constants.SPICE_MOUSE_MODE_CLIENT)) {
-        const mode_request = new Messages.SpiceMsgcMainMouseModeRequest(Constants.SPICE_MOUSE_MODE_CLIENT);
-        const miniData = new Messages.SpiceMiniData().build_msg(Constants.SPICE_MSGC_MAIN_MOUSE_MODE_REQUEST, mode_request);
-        this.send_msg(miniData);
+    if (current != Constants.SPICE_MOUSE_MODE_CLIENT && (supported & Constants.SPICE_MOUSE_MODE_CLIENT))
+    {
+        var mode_request = new Messages.SpiceMsgcMainMouseModeRequest(Constants.SPICE_MOUSE_MODE_CLIENT);
+        var mr = new Messages.SpiceMiniData();
+        mr.build_msg(Constants.SPICE_MSGC_MAIN_MOUSE_MODE_REQUEST, mode_request);
+        this.send_msg(mr);
     }
 
-    if (this.inputs) {
+    if (this.inputs)
         this.inputs.mouse_mode = current;
-    }
 }
 
 /* Shift current time to attempt to get a time matching that of the server */
-SpiceMainConn.prototype.relative_now = function() {
-    return Date.now() - this.our_mm_time + this.mm_time;
-};
-
+SpiceMainConn.prototype.relative_now = function()
+{
+    var ret = (Date.now() - this.our_mm_time) + this.mm_time;
+    return ret;
+}
 
 export {
   SpiceMainConn,
