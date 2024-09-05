@@ -259,7 +259,8 @@ function check_and_update_modifiers(event, code, spiceClient) {
             { key: 'Shift_state', eventKey: event.shiftKey, keyName: KeyNames.KEY_ShiftL },
             { key: 'Alt_state', eventKey: event.altKey, keyName: KeyNames.KEY_Alt },
             { key: 'Ctrl_state', eventKey: event.ctrlKey, keyName: KeyNames.KEY_LCtrl },
-            { key: 'Meta_state', eventKey: event.metaKey, keyName: 0xE0B5 }
+            { key: 'Meta_state', eventKey: event.metaKey, keyName: 0xE0B5 },
+            { key: 'CapsLock_state', eventKey: event.capsLockKey, keyName: KeyNames.KEY_CapsLock }
         ];
 
         stateChecks.forEach(({ key, eventKey, keyName }) => {
