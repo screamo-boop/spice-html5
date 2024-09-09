@@ -56,14 +56,12 @@ SpiceInputsConn.prototype.process_channel_message = function(msg) {
             const inputs_init = new Messages.SpiceMsgInputsInit(msg.data);
             this.keyboard_modifiers = inputs_init.keyboard_modifiers;
             DEBUG > 1 && console.log("MsgInputsInit - modifier " + this.keyboard_modifiers);
-            this.handle_keyboard_modifiers();
             return true;
         }
         case Constants.SPICE_MSG_INPUTS_KEY_MODIFIERS: {
             const key = new Messages.SpiceMsgInputsKeyModifiers(msg.data);
             this.keyboard_modifiers = key.keyboard_modifiers;
             DEBUG > 1 && console.log("MsgInputsKeyModifiers - modifier " + this.keyboard_modifiers);
-            this.handle_keyboard_modifiers();
             return true;
         }
         case Constants.SPICE_MSG_INPUTS_MOUSE_MOTION_ACK: {
@@ -74,11 +72,6 @@ SpiceInputsConn.prototype.process_channel_message = function(msg) {
         default:
             return false;
     }
-};
-
-SpiceInputsConn.prototype.handle_keyboard_modifiers = function() {
-    // FOR FUTURE
-    DEBUG > 1 && console.log("Handling keyboard modifiers");
 };
 
 
