@@ -22,58 +22,53 @@
 **  crc logic from rfc2083 ported to Javascript
 **--------------------------------------------------------------------------*/
 
-var rfc2083_crc_table = Array(256);
-var rfc2083_crc_table_computed = 0;
-/* Make the table for a fast CRC. */
-function rfc2083_make_crc_table()
-{
-    var c;
-    var n, k;
-    for (n = 0; n < 256; n++)
-    {
-        c = n;
-        for (k = 0; k < 8; k++)
-        {
-            if (c & 1)
-                c = ((0xedb88320 ^ (c >>> 1)) >>> 0) & 0xffffffff;
-            else
-                c = c >>> 1;
+var rfc2083_crc_table = new Uint32Array(256);
+var rfc2083_crc_table_computed = false;
+
+function rfc2083_make_crc_table() {
+    if (rfc2083_crc_table_computed) return;
+
+    for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) {
+            c = (c & 1) ? ((0xedb88320 ^ (c >>> 1)) >>> 0) : (c >>> 1);
         }
         rfc2083_crc_table[n] = c;
     }
 
-    rfc2083_crc_table_computed = 1;
+    rfc2083_crc_table_computed = true;
 }
-
 /* Update a running CRC with the bytes buf[0..len-1]--the CRC
      should be initialized to all 1's, and the transmitted value
      is the 1's complement of the final running CRC (see the
      crc() routine below)). */
 
-function rfc2083_update_crc(crc, u8buf, at, len)
-{
-    var c = crc;
-    var n;
+function rfc2083_update_crc(crc, u8buf, at, len) {
+let c = crc;
 
-    if (!rfc2083_crc_table_computed)
-        rfc2083_make_crc_table();
-
-    for (n = 0; n < len; n++)
-    {
-        c = rfc2083_crc_table[(c ^ u8buf[at + n]) & 0xff] ^ (c >>> 8);
-    }
-
-    return c;
+if (!rfc2083_crc_table) {
+    rfc2083_make_crc_table();
 }
 
-function rfc2083_crc(u8buf, at, len)
-{
+const table = rfc2083_crc_table;
+for (let n = 0; n < len; n++) {
+    c = table[(c ^ u8buf[at + n]) & 0xff] ^ (c >>> 8);
+}
+
+return c;
+}
+
+function rfc2083_crc(u8buf, at, len) {
     return rfc2083_update_crc(0xffffffff, u8buf, at, len) ^ 0xffffffff;
 }
 
-function crc32(mb, at, len)
-{
-    var u8 = new Uint8Array(mb);
+function crc32(mb, at, len) {
+    let u8;
+    if (mb instanceof Uint8Array) {
+        u8 = mb;
+    } else {
+        u8 = new Uint8Array(mb);
+    }
     return rfc2083_crc(u8, at, len);
 }
 
