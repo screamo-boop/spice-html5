@@ -72,8 +72,7 @@ function crc32(mb, at, len) {
     return rfc2083_crc(u8, at, len);
 }
 
-function PngIHDR(width, height)
-{
+function PngIHDR(width, height) {
     this.width = width;
     this.height = height;
     this.depth = 8;
@@ -83,34 +82,38 @@ function PngIHDR(width, height)
     this.interlace = 0;
 }
 
-PngIHDR.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var orig = at;
-        var dv = new DataView(a);
-        dv.setUint32(at, this.buffer_size() - 12); at += 4;
-        dv.setUint8(at, 'I'.charCodeAt(0)); at++;
-        dv.setUint8(at, 'H'.charCodeAt(0)); at++;
-        dv.setUint8(at, 'D'.charCodeAt(0)); at++;
-        dv.setUint8(at, 'R'.charCodeAt(0)); at++;
-        dv.setUint32(at, this.width); at += 4;
-        dv.setUint32(at, this.height); at += 4;
-        dv.setUint8(at, this.depth); at++;
-        dv.setUint8(at, this.type); at++;
-        dv.setUint8(at, this.compression); at++;
-        dv.setUint8(at, this.filter); at++;
-        dv.setUint8(at, this.interlace); at++;
-        dv.setUint32(at, crc32(a, orig + 4, this.buffer_size() - 8)); at += 4;
-        return at;
-    },
-    buffer_size: function()
-    {
-        return 12 + 13;
-    }
-}
+PngIHDR.prototype = {
+    to_buffer: function(a, at = 0) {
+        const orig = at;
+        const dv = new DataView(a, at, this.buffer_size());
+        
+        dv.setUint32(0, 13);
+        dv.setUint32(4, 0x49484452, false);
+        
+        dv.setUint32(8, this.width);
+        dv.setUint32(12, this.height);
+        
+        const fields = [
+            this.depth,
+            this.type,
+            this.compression,
+            this.filter,
+            this.interlace
+        ];
+        
+        fields.forEach((value, index) => dv.setUint8(16 + index, value));
 
+        const crcOffset = 20;
+        const crcLength = this.buffer_size() - 8;
+        dv.setUint32(crcOffset, crc32(new Uint8Array(a, orig + 4, crcLength)), false);
+
+        return at + this.buffer_size();
+    },
+    
+    buffer_size: function() {
+        return 25;
+    }
+};
 
 function adler()
 {
@@ -137,118 +140,96 @@ function PngIDAT(width, height, bytes)
     this.height = height;
 }
 
-PngIDAT.prototype =
-{
-    to_buffer: function(a, at)
-    {
+PngIDAT.prototype = {
+    to_buffer: function(a, at) {
         at = at || 0;
-        var orig = at;
-        var x, y, i, j;
-        var dv = new DataView(a);
-        var zsum = new adler();
+        const orig = at;
+        let dv = new DataView(a);
+        const zsum = new adler();
+        
         dv.setUint32(at, this.buffer_size() - 12); at += 4;
-        dv.setUint8(at, 'I'.charCodeAt(0)); at++;
-        dv.setUint8(at, 'D'.charCodeAt(0)); at++;
-        dv.setUint8(at, 'A'.charCodeAt(0)); at++;
-        dv.setUint8(at, 'T'.charCodeAt(0)); at++;
+        dv.setUint32(at, 0x49444154); at += 4;
 
-        /* zlib header.  */
-        dv.setUint8(at, 0x78); at++;
-        dv.setUint8(at, 0x01); at++;
+        dv.setUint16(at, 0x7801); at += 2;
 
-        /* Deflate header.  Specifies uncompressed, final bit */
+        const uncompressedSize = this.data.byteLength + this.height;
         dv.setUint8(at, 0x80); at++;
-        dv.setUint16(at, this.data.byteLength + this.height); at += 2;
-        dv.setUint16(at, ~(this.data.byteLength + this.height)); at += 2;
-        var u8 = new Uint8Array(this.data);
-        for (i = 0, y = 0; y < this.height; y++)
-        {
-            /* Filter type 0 - uncompressed */
-            dv.setUint8(at, 0); at++;
+        dv.setUint16(at, uncompressedSize); at += 2;
+        dv.setUint16(at, ~uncompressedSize); at += 2;
+
+        const u8 = new Uint8Array(this.data);
+        let i = 0;
+        
+        for (let y = 0; y < this.height; y++) {
+            dv.setUint8(at++, 0);
             zsum.update(0);
-            for (x = 0; x < this.width && i < this.data.byteLength; x++)
-            {
-                zsum.update(u8[i]);
-                dv.setUint8(at, u8[i++]); at++;
-                zsum.update(u8[i]);
-                dv.setUint8(at, u8[i++]); at++;
-                zsum.update(u8[i]);
-                dv.setUint8(at, u8[i++]); at++;
-                zsum.update(u8[i]);
-                dv.setUint8(at, u8[i++]); at++;
+
+            for (let x = 0; x < this.width && i < u8.length; x += 4) {
+                for (let b = 0; b < 4; b++) {
+                    const byte = u8[i++];
+                    dv.setUint8(at++, byte);
+                    zsum.update(byte);
+                }
             }
         }
 
-        /* zlib checksum.   */
-        dv.setUint16(at, zsum.s2); at+=2;
-        dv.setUint16(at, zsum.s1); at+=2;
-
-        /* FIXME - something is not quite right with the zlib code;
-                   you get an error from libpng if you open the image in
-                   gimp.  But it works, so it's good enough for now... */
-
+        dv.setUint16(at, zsum.s2); at += 2;
+        dv.setUint16(at, zsum.s1); at += 2;
         dv.setUint32(at, crc32(a, orig + 4, this.buffer_size() - 8)); at += 4;
         return at;
     },
-    buffer_size: function()
-    {
+    buffer_size: function() {
         return 12 + this.data.byteLength + this.height + 4 + 2 + 1 + 2 + 2;
     }
 }
-
 
 function PngIEND()
 {
 }
 
-PngIEND.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var orig = at;
-        var i;
-        var dv = new DataView(a);
-        dv.setUint32(at, this.buffer_size() - 12); at += 4;
-        dv.setUint8(at, 'I'.charCodeAt(0)); at++;
-        dv.setUint8(at, 'E'.charCodeAt(0)); at++;
-        dv.setUint8(at, 'N'.charCodeAt(0)); at++;
-        dv.setUint8(at, 'D'.charCodeAt(0)); at++;
-        dv.setUint32(at, crc32(a, orig + 4, this.buffer_size() - 8)); at += 4;
+PngIEND.prototype = {
+    to_buffer: function(a, at = 0) {
+        const orig = at;
+        const dv = new DataView(a);
+        const bufferSize = 12;
+        const chunkLength = bufferSize - 12;
+        
+        const IEND = new Uint8Array([...'IEND'].map(c => c.charCodeAt(0)));
+
+        dv.setUint32(at, chunkLength); at += 4;
+        IEND.forEach(code => { dv.setUint8(at++, code); });
+        dv.setUint32(at, crc32(a, orig + 4, bufferSize - 8)); at += 4;
+
         return at;
     },
-    buffer_size: function()
-    {
+    buffer_size: function() {
         return 12;
     }
 }
 
 
-function create_rgba_png(width, height, bytes)
-{
-    var i;
+function create_rgba_png(width, height, bytes) {
     var ihdr = new PngIHDR(width, height);
     var idat = new PngIDAT(width, height, bytes);
-    var iend = new PngIEND;
+    var iend = new PngIEND();
 
-    var mb = new ArrayBuffer(ihdr.buffer_size() + idat.buffer_size() + iend.buffer_size());
+    var bufferSize = ihdr.buffer_size() + idat.buffer_size() + iend.buffer_size();
+    var mb = new ArrayBuffer(bufferSize);
     var at = ihdr.to_buffer(mb);
     at = idat.to_buffer(mb, at);
     at = iend.to_buffer(mb, at);
 
     var u8 = new Uint8Array(mb);
-    var str = "";
-    for (i = 0; i < at; i++)
-    {
-        str += "%";
-        if (u8[i] < 16)
-            str += "0";
-        str += u8[i].toString(16);
+    var hex = '';
+    var lookup = Array.from({length: 16}, (_, i) => i.toString(16).padStart(2, '0'));
+
+    for (var i = 0; i < at; i++) {
+        hex += `%${lookup[u8[i]]}`;
     }
 
-
-    return "%89PNG%0D%0A%1A%0A" + str;
+    return "%89PNG%0D%0A%1A%0A" + hex;
 }
+
 
 export {
   create_rgba_png,
