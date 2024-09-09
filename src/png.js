@@ -22,8 +22,6 @@
 **  crc logic from rfc2083 ported to Javascript
 **--------------------------------------------------------------------------*/
 
-import { SpiceDataView } from './spicedataview.js';
-
 var rfc2083_crc_table = Array(256);
 var rfc2083_crc_table_computed = 0;
 /* Make the table for a fast CRC. */
@@ -96,7 +94,7 @@ PngIHDR.prototype =
     {
         at = at || 0;
         var orig = at;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         dv.setUint32(at, this.buffer_size() - 12); at += 4;
         dv.setUint8(at, 'I'.charCodeAt(0)); at++;
         dv.setUint8(at, 'H'.charCodeAt(0)); at++;
@@ -151,7 +149,7 @@ PngIDAT.prototype =
         at = at || 0;
         var orig = at;
         var x, y, i, j;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         var zsum = new adler();
         dv.setUint32(at, this.buffer_size() - 12); at += 4;
         dv.setUint8(at, 'I'.charCodeAt(0)); at++;
@@ -215,7 +213,7 @@ PngIEND.prototype =
         at = at || 0;
         var orig = at;
         var i;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         dv.setUint32(at, this.buffer_size() - 12); at += 4;
         dv.setUint8(at, 'I'.charCodeAt(0)); at++;
         dv.setUint8(at, 'E'.charCodeAt(0)); at++;
