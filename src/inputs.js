@@ -81,29 +81,31 @@ SpiceInputsConn.prototype.process_channel_message = function(msg)
 function handle_mousemove(e) {
     if (!this.sc) return;
 
-    var msg = new Messages.SpiceMiniData();
-    var isClientMouseMode = this.sc.mouse_mode == Constants.SPICE_MOUSE_MODE_CLIENT;
-    var move = isClientMouseMode ? 
-        new Messages.SpiceMsgcMousePosition(this.sc, e) : 
-        new Messages.SpiceMsgcMouseMotion(this.sc, e);
+    const { sc } = this;
+    const isClientMouseMode = sc.mouse_mode === Constants.SPICE_MOUSE_MODE_CLIENT;
+    const move = isClientMouseMode
+        ? new Messages.SpiceMsgcMousePosition(sc, e)
+        : new Messages.SpiceMsgcMouseMotion(sc, e);
     
-    var buildMessageType = isClientMouseMode ? 
-        Constants.SPICE_MSGC_INPUTS_MOUSE_POSITION : 
-        Constants.SPICE_MSGC_INPUTS_MOUSE_MOTION;
+    const buildMessageType = isClientMouseMode 
+        ? Constants.SPICE_MSGC_INPUTS_MOUSE_POSITION 
+        : Constants.SPICE_MSGC_INPUTS_MOUSE_MOTION;
 
+    const msg = new Messages.SpiceMiniData();
     msg.build_msg(buildMessageType, move);
 
-    if (this.sc.inputs?.state === "ready") {
+    if (sc.inputs?.state === "ready") {
+        const { waiting_for_ack } = sc.inputs;
         const ackLimit = 2 * Constants.SPICE_INPUT_MOTION_ACK_BUNCH;
-        if (this.sc.inputs.waiting_for_ack < ackLimit) {
-            this.sc.inputs.send_msg(msg);
-            this.sc.inputs.waiting_for_ack++;
-        } else {
-            DEBUG > 0 && this.sc.log_info("Discarding mouse motion");
+        if (waiting_for_ack < ackLimit) {
+            sc.inputs.send_msg(msg);
+            sc.inputs.waiting_for_ack++;
+        } else if (DEBUG > 0) {
+            sc.log_info("Discarding mouse motion");
         }
     }
 
-    var cursor = this.sc.cursor?.spice_simulated_cursor;
+    const cursor = sc.cursor?.spice_simulated_cursor;
     if (cursor) {
         cursor.style.display = 'block';
         cursor.style.left = `${e.pageX - cursor.spice_hot_x}px`;
