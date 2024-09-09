@@ -263,7 +263,6 @@ function check_and_update_modifiers(e, code, sc) {
 
         modifierStates.forEach(modifier => {
             if (modifier.state !== modifier.key) {
-                console.log(`${modifier.name} state out of sync`);
                 update_modifier(modifier.key, modifier.code, sc);
                 modifier.state = modifier.key;
             }
