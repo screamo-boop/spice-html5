@@ -26,38 +26,34 @@
 
 import { Constants } from './enums.js';
 
-function convert_spice_bitmap_to_web(context, spice_bitmap)
-{
-    var ret;
-    var offset, x, src_offset = 0, src_dec = 0;
-    var u8 = new Uint8Array(spice_bitmap.data);
-    if (spice_bitmap.format != Constants.SPICE_BITMAP_FMT_32BIT &&
-        spice_bitmap.format != Constants.SPICE_BITMAP_FMT_RGBA)
+function convert_spice_bitmap_to_web(context, spice_bitmap) {
+    if (spice_bitmap.format !== Constants.SPICE_BITMAP_FMT_32BIT && spice_bitmap.format !== Constants.SPICE_BITMAP_FMT_RGBA) {
         return undefined;
-
-    if (!(spice_bitmap.flags & Constants.SPICE_BITMAP_FLAGS_TOP_DOWN))
-    {
-        src_offset = (spice_bitmap.y - 1 ) * spice_bitmap.stride;
-        src_dec = 2 * spice_bitmap.stride;
     }
 
-    ret = context.createImageData(spice_bitmap.x, spice_bitmap.y);
-    for (offset = 0; offset < (spice_bitmap.y * spice_bitmap.stride); src_offset -= src_dec)
-        for (x = 0; x < spice_bitmap.x; x++, offset += 4, src_offset += 4)
-        {
-            ret.data[offset + 0 ] = u8[src_offset + 2];
-            ret.data[offset + 1 ] = u8[src_offset + 1];
-            ret.data[offset + 2 ] = u8[src_offset + 0];
+    const u8 = new Uint8Array(spice_bitmap.data);
+    const { x: width, y: height, stride, flags, format } = spice_bitmap;
+    const topDown = flags & Constants.SPICE_BITMAP_FLAGS_TOP_DOWN;
+    const src_dec = topDown ? 0 : 2 * stride;
+    let src_offset = topDown ? 0 : (height - 1) * stride;
 
-            // FIXME - We effectively treat all images as having SPICE_IMAGE_FLAGS_HIGH_BITS_SET
-            if (spice_bitmap.format == Constants.SPICE_BITMAP_FMT_32BIT)
-                ret.data[offset + 3] = 255;
-            else
-                ret.data[offset + 3] = u8[src_offset];
+    const ret = context.createImageData(width, height);
+    const retData = ret.data;
+    const imageSize = width * height;
+
+    for (let offset = 0, rowIndex = 0; rowIndex < height; rowIndex++) {
+        for (let colIndex = 0; colIndex < width; colIndex++, offset += 4, src_offset += 4) {
+            retData[offset] = u8[src_offset + 2];
+            retData[offset + 1] = u8[src_offset + 1];
+            retData[offset + 2] = u8[src_offset];
+            retData[offset + 3] = (format === Constants.SPICE_BITMAP_FMT_32BIT) ? 255 : u8[src_offset];
         }
+        src_offset -= src_dec; // Adjust offset for next row
+    }
 
     return ret;
 }
+
 
 export {
   convert_spice_bitmap_to_web,
