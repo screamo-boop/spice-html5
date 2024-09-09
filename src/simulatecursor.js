@@ -26,7 +26,6 @@
 **  simulate a cursor using an image that is moved around the screen.
 **--------------------------------------------------------------------------*/
 
-import { SpiceDataView } from './spicedataview.js';
 import { hex_sha1 } from './thirdparty/sha1.js';
 
 var SpiceSimulateCursor = {
