@@ -49,32 +49,38 @@ function SpiceInputsConn()
 }
 
 SpiceInputsConn.prototype = Object.create(SpiceConn.prototype);
-SpiceInputsConn.prototype.process_channel_message = function(msg)
-{
-    if (msg.type == Constants.SPICE_MSG_INPUTS_INIT)
-    {
-        var inputs_init = new Messages.SpiceMsgInputsInit(msg.data);
-        this.keyboard_modifiers = inputs_init.keyboard_modifiers;
-        DEBUG > 1 && console.log("MsgInputsInit - modifier " + this.keyboard_modifiers);
-        // FIXME - We don't do anything with the keyboard modifiers...
-        return true;
+
+SpiceInputsConn.prototype.process_channel_message = function(msg) {
+    switch (msg.type) {
+        case Constants.SPICE_MSG_INPUTS_INIT: {
+            const inputs_init = new Messages.SpiceMsgInputsInit(msg.data);
+            this.keyboard_modifiers = inputs_init.keyboard_modifiers;
+            DEBUG > 1 && console.log("MsgInputsInit - modifier " + this.keyboard_modifiers);
+            this.handle_keyboard_modifiers();
+            return true;
+        }
+        case Constants.SPICE_MSG_INPUTS_KEY_MODIFIERS: {
+            const key = new Messages.SpiceMsgInputsKeyModifiers(msg.data);
+            this.keyboard_modifiers = key.keyboard_modifiers;
+            DEBUG > 1 && console.log("MsgInputsKeyModifiers - modifier " + this.keyboard_modifiers);
+            this.handle_keyboard_modifiers();
+            return true;
+        }
+        case Constants.SPICE_MSG_INPUTS_MOUSE_MOTION_ACK: {
+            DEBUG > 1 && console.log("mouse motion ack");
+            this.waiting_for_ack -= Constants.SPICE_INPUT_MOTION_ACK_BUNCH;
+            return true;
+        }
+        default:
+            return false;
     }
-    if (msg.type == Constants.SPICE_MSG_INPUTS_KEY_MODIFIERS)
-    {
-        var key = new Messages.SpiceMsgInputsKeyModifiers(msg.data);
-        this.keyboard_modifiers = key.keyboard_modifiers;
-        DEBUG > 1 && console.log("MsgInputsKeyModifiers - modifier " + this.keyboard_modifiers);
-        // FIXME - We don't do anything with the keyboard modifiers...
-        return true;
-    }
-    if (msg.type == Constants.SPICE_MSG_INPUTS_MOUSE_MOTION_ACK)
-    {
-        DEBUG > 1 && console.log("mouse motion ack");
-        this.waiting_for_ack -= Constants.SPICE_INPUT_MOTION_ACK_BUNCH;
-        return true;
-    }
-    return false;
-}
+};
+
+SpiceInputsConn.prototype.handle_keyboard_modifiers = function() {
+    // FOR FUTURE
+    DEBUG > 1 && console.log("Handling keyboard modifiers");
+};
+
 
 
 
