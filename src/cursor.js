@@ -98,7 +98,7 @@ class SpiceCursorConn extends SpiceConn {
 
     hideCursor() {
         DEBUG > 1 && console.log("SpiceMsgCursorHide");
-        this.setCursorStyle("none");
+        this.setCursorStyle("auto");
         return true;
     }
 
