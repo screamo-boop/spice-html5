@@ -146,6 +146,7 @@
             document.getElementById('connectButton').onclick = connect;
             document.getElementById('sendCtrlAltDel').addEventListener('click', function(){ SpiceHtml5.sendCtrlAltDel(sc); });
             document.getElementById('clipboard').addEventListener('click', function(){ SpiceHtml5.simulateClipboardTyping(sc)});
+            document.getElementById('sendCtrlAltFDropdown').addEventListener('change', function(){ SpiceHtml5.sendCtrlAltF(sc, this.value); this.selectedIndex = 0; })
         </script>
 
     </head>
@@ -166,6 +167,22 @@
             <button id="sendCtrlAltDel">Send Ctrl-Alt-Delete</button>
             <button id="debugLogs">Toggle Debug Logs</button>
             <button id="clipboard">Paste</button>
+            <select id="sendCtrlAltFDropdown" style="display: inline;">
+                <option selected disabled>Send Ctrl+Alt+F</option>
+                <!-- Options for F1 to F12 -->
+                <option value="1">Ctrl+Alt+F1</option>
+                <option value="2">Ctrl+Alt+F2</option>
+                <option value="3">Ctrl+Alt+F3</option>
+                <option value="4">Ctrl+Alt+F4</option>
+                <option value="5">Ctrl+Alt+F5</option>
+                <option value="6">Ctrl+Alt+F6</option>
+                <option value="7">Ctrl+Alt+F7</option>
+                <option value="8">Ctrl+Alt+F8</option>
+                <option value="9">Ctrl+Alt+F9</option>
+                <option value="10">Ctrl+Alt+F10</option>
+                <option value="11">Ctrl+Alt+F11</option>
+                <option value="12">Ctrl+Alt+F12</option>
+            </select>
             <div id="message-div" class="spice-message" style="display: none;"></div>
 
             <div id="debug-div">

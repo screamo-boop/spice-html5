@@ -173,7 +173,6 @@ function handle_mousewheel(e) {
 function handle_keydown(e) {
     if (!this.sc || this.sc.inputs?.state !== "ready") return;
     const key = new Messages.SpiceMsgcKeyDown(e);
-    console.log(e)
     check_and_update_modifiers(e, key.code, this.sc);
     const msg = new Messages.SpiceMiniData();
     msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_DOWN, key);
@@ -295,6 +294,32 @@ function sendCtrlAltDel(sc) {
     }
 }
 
+function sendCtrlAltF(sc, fNumber) {
+    if (sc && sc.inputs && sc.inputs.state === "ready") {
+        if (fNumber < 1 || fNumber > 10) {
+            console.error("Invalid function key number. Must be between 1 and 10.");
+            return;
+        }
+
+        var key = new Messages.SpiceMsgcKeyDown();
+        var msg = new Messages.SpiceMiniData();
+
+        update_modifier(true, KeyNames.KEY_LCtrl, sc);
+        update_modifier(true, KeyNames.KEY_Alt, sc);
+
+        var functionKeyCode = KeyNames.KEY_F1 + (fNumber - 1);
+
+        key.code = functionKeyCode;
+        msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_DOWN, key);
+        sc.inputs.send_msg(msg);
+        msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_UP, key);
+        sc.inputs.send_msg(msg);
+
+        update_modifier(false, KeyNames.KEY_LCtrl, sc);
+        update_modifier(false, KeyNames.KEY_Alt, sc);
+    }
+}
+
 function update_modifier(isKeyDown, keyCode, spiceClient) {
     const message = new Messages.SpiceMiniData();
     const keyMessage = isKeyDown 
@@ -366,4 +391,5 @@ export {
   handle_keyup,
   sendCtrlAltDel,
   simulateClipboardTyping,
+  sendCtrlAltF,
 };

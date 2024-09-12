@@ -214,9 +214,6 @@ const keyCodeMap = {
   "Я": 90, "я": 90
 };
 
-console.log(keyCodeMap);
-console.log(keyCodeMap);
-
 export {
   KeyNames,
   keyCodeMap,
