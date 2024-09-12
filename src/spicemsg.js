@@ -1137,16 +1137,18 @@ function SpiceMsgDisplayStreamData(a, at)
     this.from_buffer(a, at);
 }
 
-SpiceMsgDisplayStreamData.prototype =
-{
-    from_buffer: function(a, at)
-    {
+SpiceMsgDisplayStreamData.prototype = {
+    from_buffer: function(a, at) {
         at = at || 0;
         var dv = new DataView(a);
-        this.base = new SpiceStreamDataHeader;
+        this.base = new SpiceStreamDataHeader();
         at = this.base.from_dv(dv, at, a);
-        this.data_size = dv.getUint32(at, true); at += 4;
-        this.data = dv.u8.subarray(at, at + this.data_size);
+        this.data_size = dv.getUint32(at, true);
+        at += 4;
+
+        var u8Array = new Uint8Array(a);
+
+        this.data = u8Array.subarray(at, at + this.data_size);
     },
 }
 
@@ -1155,20 +1157,21 @@ function SpiceMsgDisplayStreamDataSized(a, at)
     this.from_buffer(a, at);
 }
 
-SpiceMsgDisplayStreamDataSized.prototype =
-{
-    from_buffer: function(a, at)
-    {
+SpiceMsgDisplayStreamDataSized.prototype = {
+    from_buffer: function(a, at) {
         at = at || 0;
         var dv = new DataView(a);
-        this.base = new SpiceStreamDataHeader;
+        this.base = new SpiceStreamDataHeader();
         at = this.base.from_dv(dv, at, a);
         this.width = dv.getUint32(at, true); at += 4;
         this.height = dv.getUint32(at, true); at += 4;
-        this.dest = new SpiceRect;
+        this.dest = new SpiceRect();
         at = this.dest.from_dv(dv, at, a);
         this.data_size = dv.getUint32(at, true); at += 4;
-        this.data = dv.u8.subarray(at, at + this.data_size);
+
+        var u8Array = new Uint8Array(a);
+
+        this.data = u8Array.subarray(at, at + this.data_size);
     },
 }
 
