@@ -14,6 +14,8 @@ What problems have been solved so far:
 * Optimized resizing
 * Optimized spiceDataView
 * Migrated to native DataView where it possible
+* Clipboard copypaste (typing simulation)
+* Buttons for ctrl+alt+f*
 
 I use firefox as my main browser, all tests happen on it
 

@@ -9,7 +9,7 @@ Medium Tasks:
     an array of ArrayBuffers so we don't have to
     use the combine function, which is presumed slow.
 
-  . Use the 'real' DataView if we have it
+  . ~~Use the 'real' DataView if we have it~~
 
   . Consider passing a status change event back to the front end
     (e.g. indicators for numlock, connection status, all that jazz)
