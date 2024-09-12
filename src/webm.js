@@ -137,142 +137,145 @@ function EBML_write_float_value(id, val, dv, at)
 
 
 
-function EBML_write_u64_data_len(len, dv, at)
-{
-    /* Javascript doesn't do 64 bit ints, so this cheats and
-        just has a max of 32 bits.  Fine for our purposes */
-    dv.setUint8(at++, 0x01);
-    dv.setUint8(at++, 0x00);
-    dv.setUint8(at++, 0x00);
-    dv.setUint8(at++, 0x00);
-    var val = len & 0xFFFFFFFF;
-    for (var shift = 24; shift >= 0; shift -= 8)
-        dv.setUint8(at++, val >> shift);
+function EBML_write_u64_data_len(len, dv, at) {
+    const fixedBytes = [0x01, 0x00, 0x00, 0x00];
+    
+    for (let i = 0; i < fixedBytes.length; i++) {
+        dv.setUint8(at++, fixedBytes[i]);
+    }
+
+    dv.setUint8(at++, (len >>> 24) & 0xFF);
+    dv.setUint8(at++, (len >>> 16) & 0xFF);
+    dv.setUint8(at++, (len >>> 8) & 0xFF);
+    dv.setUint8(at++, len & 0xFF);
+    
     return at;
 }
 
-function EBML_write_array(arr, dv, at)
-{
-    for (var i = 0; i < arr.length; i++)
-        dv.setUint8(at + i, arr[i]);
+function EBML_write_array(arr, dv, at) {
+    dv.setUint8(at, ...arr);
     return at + arr.length;
 }
 
-function EBML_write_string(str, dv, at)
-{
-    for (var i = 0; i < str.length; i++)
-        dv.setUint8(at + i, str.charCodeAt(i));
-    return at + str.length;
+function EBML_write_string(str, dv, at) {
+    const len = str.length;
+    for (let i = 0; i < len; i++) {
+        dv.setUint8(at++, str.charCodeAt(i));
+    }
+    return at;
 }
 
-function EBML_write_data(id, data, dv, at)
-{
+function EBML_write_data(id, data, dv, at) {
     at = EBML_write_array(id, dv, at);
-    if (data.length < 127)
-        at = EBML_write_u1_data_len(data.length, dv, at);
-    else
-        at = EBML_write_u64_data_len(data.length, dv, at);
-    if ((typeof data) == "string")
-        at = EBML_write_string(data, dv, at);
-    else
-        at = EBML_write_array(data, dv, at);
-    return at;
+
+    const dataLength = data.length;
+    at = (dataLength < 127)
+        ? EBML_write_u1_data_len(dataLength, dv, at)
+        : EBML_write_u64_data_len(dataLength, dv, at);
+
+    if (typeof data === "string") {
+        return EBML_write_string(data, dv, at);
+    } else {
+        return EBML_write_array(data, dv, at);
+    }
 }
 
 /*----------------------------------------------------------------------------
 **  Webm objects
 **      These classes can create the binary representation of a webm file
 **--------------------------------------------------------------------------*/
-function EBMLHeader()
-{
+function EBMLHeader() {
     this.id = EBML_HEADER;
-    this.Version = 1;
-    this.ReadVersion = 1;
-    this.MaxIDLength = 4;
-    this.MaxSizeLength = 8;
-    this.DocType = "webm";
-    this.DocTypeVersion = 2;  /* Not well specified by the WebM guys, but functionally required for Firefox */
-    this.DocTypeReadVersion = 2;
+    this.version = 1;
+    this.readVersion = 1;
+    this.maxIDLength = 4;
+    this.maxSizeLength = 8;
+    this.docType = "webm";
+    this.docTypeVersion = 2; // Required for Firefox
+    this.docTypeReadVersion = 2;
 }
 
-EBMLHeader.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var dv = new DataView(a);
+EBMLHeader.prototype = {
+    toBuffer: function(buffer, offset = 0) {
+        const dv = new DataView(buffer);
 
-        at = EBML_write_array(this.id, dv, at);
-        at = EBML_write_u64_data_len(0x1f, dv, at);
-        at = EBML_write_u8_value(EBML_HEADER_VERSION, this.Version, dv, at);
-        at = EBML_write_u8_value(EBML_HEADER_READ_VERSION, this.ReadVersion, dv, at);
-        at = EBML_write_u8_value(EBML_HEADER_MAX_ID_LENGTH, this.MaxIDLength, dv, at);
-        at = EBML_write_u8_value(EBML_HEADER_MAX_SIZE_LENGTH, this.MaxSizeLength, dv, at);
-        at = EBML_write_data(EBML_HEADER_DOC_TYPE, this.DocType, dv, at);
-        at = EBML_write_u8_value(EBML_HEADER_DOC_TYPE_VERSION, this.DocTypeVersion, dv, at);
-        at = EBML_write_u8_value(EBML_HEADER_DOC_TYPE_READ_VERSION, this.DocTypeReadVersion, dv, at);
+        const writeHelper = (fn, ...args) => offset = fn(...args, dv, offset);
 
-        return at;
+        writeHelper(EBML_write_array, this.id);
+        writeHelper(EBML_write_u64_data_len, 0x1f);
+        writeHelper(EBML_write_u8_value, EBML_HEADER_VERSION, this.version);
+        writeHelper(EBML_write_u8_value, EBML_HEADER_READ_VERSION, this.readVersion);
+        writeHelper(EBML_write_u8_value, EBML_HEADER_MAX_ID_LENGTH, this.maxIDLength);
+        writeHelper(EBML_write_u8_value, EBML_HEADER_MAX_SIZE_LENGTH, this.maxSizeLength);
+        writeHelper(EBML_write_data, EBML_HEADER_DOC_TYPE, this.docType);
+        writeHelper(EBML_write_u8_value, EBML_HEADER_DOC_TYPE_VERSION, this.docTypeVersion);
+        writeHelper(EBML_write_u8_value, EBML_HEADER_DOC_TYPE_READ_VERSION, this.docTypeReadVersion);
+
+        return offset;
     },
-    buffer_size: function()
-    {
-        return 0x1f + 8 + this.id.length;
-    },
-}
+    bufferSize: function() {
+        const headerLength = this.id.length;
+        const fixedSize = 0x1f + 8;
+        return fixedSize + headerLength;
+    }
+};
 
-function webm_Segment()
-{
+function webm_Segment() {
     this.id = WEBM_SEGMENT_HEADER;
 }
 
-webm_Segment.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var dv = new DataView(a);
+webm_Segment.prototype = {
+    to_buffer: function(a, at = 0) {
+        const dv = new DataView(a);
 
         at = EBML_write_array(this.id, dv, at);
-        dv.setUint8(at++, 0xff);
-        return at;
+        dv.setUint8(at, 0xff);
+        return at + 1;
     },
-    buffer_size: function()
-    {
-        return this.id.length + 1;
-    },
-}
 
-function webm_SegmentInformation()
-{
+    buffer_size: function() {
+        const idLength = this.id.length;
+        return idLength + 1;
+    },
+};
+
+function webm_SegmentInformation() {
     this.id = WEBM_SEGMENT_INFORMATION;
-    this.timecode_scale = 1000000; /* 1 ms */
+    this.timecode_scale = 1000000; // 1 ms
     this.muxing_app = "spice";
     this.writing_app = "spice-html5";
 
+    this.idLength = this.id.length;
+    this.muxingAppLength = this.muxing_app.length;
+    this.writingAppLength = this.writing_app.length;
+    
+    this.bufferSize = this.idLength + 8 +
+                      WEBM_TIMECODE_SCALE.length + 1 + 4 +
+                      WEBM_MUXING_APP.length + 1 + this.muxingAppLength +
+                      WEBM_WRITING_APP.length + 1 + this.writingAppLength;
 }
 
-webm_SegmentInformation.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var dv = new DataView(a);
+webm_SegmentInformation.prototype = {
+    to_buffer: function(a, at = 0) {
+        let dv;
+        if (!(a instanceof DataView)) {
+            dv = new DataView(a);
+        } else {
+            dv = a;
+        }
 
         at = EBML_write_array(this.id, dv, at);
-        at = EBML_write_u64_data_len(this.buffer_size() - 8 - this.id.length, dv, at);
+        at = EBML_write_u64_data_len(this.bufferSize - 8 - this.idLength, dv, at);
         at = EBML_write_u32_value(WEBM_TIMECODE_SCALE, this.timecode_scale, dv, at);
         at = EBML_write_data(WEBM_MUXING_APP, this.muxing_app, dv, at);
         at = EBML_write_data(WEBM_WRITING_APP, this.writing_app, dv, at);
+        
         return at;
     },
-    buffer_size: function()
-    {
-        return this.id.length + 8 +
-                 WEBM_TIMECODE_SCALE.length + 1 + 4 +
-                 WEBM_MUXING_APP.length + 1 + this.muxing_app.length +
-                 WEBM_WRITING_APP.length + 1 + this.writing_app.length;
-    },
-}
+    buffer_size: function() {
+        return this.bufferSize;
+    }
+};
 
 function webm_Audio(frequency)
 {
@@ -301,36 +304,56 @@ webm_Audio.prototype =
     },
 }
 
-function webm_Video(width, height)
-{
+function webm_Video(width, height) {
     this.id = WEBM_VIDEO;
     this.flag_interlaced = 0;
     this.width = width;
     this.height = height;
+    this.idLength = this.id.length;
+    this.initializeBufferSize();
 }
 
-webm_Video.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var dv = new DataView(a);
-        at = EBML_write_array(this.id, dv, at);
-        at = EBML_write_u64_data_len(this.buffer_size() - 8 - this.id.length, dv, at);
-        at = EBML_write_u8_value(WEBM_FLAG_INTERLACED, this.flag_interlaced, dv, at);
-        at = EBML_write_u16_value(WEBM_PIXEL_WIDTH, this.width, dv, at)
-        at = EBML_write_u16_value(WEBM_PIXEL_HEIGHT, this.height, dv, at)
+webm_Video.prototype = {
+    initializeBufferSize: function() {
+        const FLAG_INTERLACED_LEN = 1;
+        const WIDTH_DATA_LEN = 2;
+        const HEIGHT_DATA_LEN = 2;
+
+        this.constantBufferSize = this.idLength + 8 +
+            WEBM_FLAG_INTERLACED.length + FLAG_INTERLACED_LEN +
+            WEBM_PIXEL_WIDTH.length + WIDTH_DATA_LEN +
+            WEBM_PIXEL_HEIGHT.length + HEIGHT_DATA_LEN;
+    },
+
+    to_buffer: function(a, at = 0) {
+        const dv = new DataView(a);
+
+        const idLength = this.idLength;
+        const dataLength = this.constantBufferSize - 8 - idLength;
+
+        const writeFns = [EBML_write_array, EBML_write_u64_data_len, 
+                          EBML_write_u8_value, EBML_write_u16_value, 
+                          EBML_write_u16_value];
+
+        const argsArray = [
+            [this.id, dv, at],
+            [dataLength, dv, at],
+            [WEBM_FLAG_INTERLACED, this.flag_interlaced, dv, at],
+            [WEBM_PIXEL_WIDTH, this.width, dv, at],
+            [WEBM_PIXEL_HEIGHT, this.height, dv, at]
+        ];
+
+        for (let i = 0; i < writeFns.length; i++) {
+            at = writeFns[i](...argsArray[i]);
+        }
+
         return at;
     },
-    buffer_size: function()
-    {
-        return this.id.length + 8 +
-            WEBM_FLAG_INTERLACED.length + 1 + 1 +
-            WEBM_PIXEL_WIDTH.length + 1 + 2 +
-            WEBM_PIXEL_HEIGHT.length + 1 + 2;
-    },
-}
 
+    buffer_size: function() {
+        return this.constantBufferSize;
+    }
+};
 
 
 /* ---------------------------
@@ -473,192 +496,193 @@ webm_AudioTrackEntry.prototype =
     },
 }
 
-function webm_VideoTrackEntry(width, height)
-{
-    /*
-    ** In general, we follow specifications found by looking here:
-    **   https://www.webmproject.org/docs/container/
-    ** which points here:
-    **   https://www.matroska.org/technical/specs/index.html
-    ** and here:
-    **   https://datatracker.ietf.org/doc/draft-ietf-cellar-matroska/
-    ** Our goal is to supply mandatory values, and note where we differ
-    ** from the default.
-    */
-    this.id = WEBM_TRACK_ENTRY;
-    this.number = 1;
-    this.uid = 1;
-    this.type = 1; // Video
-    this.flag_enabled = 1;
-    this.flag_default = 1;
-    this.flag_forced = 1;  // Different than default; we wish to force
-    this.flag_lacing = 1;
-    this.min_cache = 0;
-    this.max_block_addition_id = 0;
-    this.codec_id = "V_VP8";
-    this.codec_decode_all = 1;
-    this.seek_pre_roll = 0;
-
-    this.video = new webm_Video(width, height);
+function webm_VideoTrackEntry(width, height) {
+    this.initializeConstants(width, height);
 }
 
-webm_VideoTrackEntry.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var dv = new DataView(a);
-        at = EBML_write_array(this.id, dv, at);
-        at = EBML_write_u64_data_len(this.buffer_size() - 8 - this.id.length, dv, at);
-        at = EBML_write_u8_value(WEBM_TRACK_NUMBER, this.number, dv, at);
-        at = EBML_write_u8_value(WEBM_TRACK_UID, this.uid, dv, at);
-        at = EBML_write_u8_value(WEBM_FLAG_ENABLED, this.flag_enabled, dv, at);
-        at = EBML_write_u8_value(WEBM_FLAG_DEFAULT, this.flag_default, dv, at);
-        at = EBML_write_u8_value(WEBM_FLAG_FORCED, this.flag_forced, dv, at);
-        at = EBML_write_u8_value(WEBM_FLAG_LACING, this.flag_lacing, dv, at);
-        at = EBML_write_data(WEBM_CODEC_ID, this.codec_id, dv, at);
-        at = EBML_write_u8_value(WEBM_MIN_CACHE, this.min_cache, dv, at);
-        at = EBML_write_u8_value(WEBM_MAX_BLOCK_ADDITION_ID, this.max_block_addition_id, dv, at);
-        at = EBML_write_u8_value(WEBM_CODEC_DECODE_ALL, this.codec_decode_all, dv, at);
-        at = EBML_write_u32_value(WEBM_SEEK_PRE_ROLL, this.seek_pre_roll, dv, at);
-        at = EBML_write_u8_value(WEBM_TRACK_TYPE, this.type, dv, at);
-        at = this.video.to_buffer(a, at);
-        return at;
+webm_VideoTrackEntry.prototype = {
+    initializeConstants: function(width, height) {
+        this.id = WEBM_TRACK_ENTRY;
+        this.number = 1;
+        this.uid = 1;
+        this.type = 1; // Video
+        this.flag_enabled = 1;
+        this.flag_default = 1;
+        this.flag_forced = 1; // Different than default; we wish to force
+        this.flag_lacing = 1;
+        this.min_cache = 0;
+        this.max_block_addition_id = 0;
+        this.codec_id = "V_VP8";
+        this.codec_decode_all = 1;
+        this.seek_pre_roll = 0;
+
+        this.codec_idLength = this.codec_id.length;
+
+        this.video = new webm_Video(width, height);
+        this.videoBufferSize = this.video.buffer_size();
+
+        this.constantBufferSize = this.computeConstantBufferSize();
     },
-    buffer_size: function()
-    {
+
+    computeConstantBufferSize: function() {
+        const LENGTH_PLUS_ONE = 1;  // Used to denote length or flag values
+        const SEEK_PRE_ROLL_SIZE = 4;
+
         return this.id.length + 8 +
-            WEBM_TRACK_NUMBER.length + 1 + 1 +
-            WEBM_TRACK_UID.length + 1 + 1 +
-            WEBM_FLAG_ENABLED.length + 1 + 1 +
-            WEBM_FLAG_DEFAULT.length + 1 + 1 +
-            WEBM_FLAG_FORCED.length + 1 + 1 +
-            WEBM_FLAG_LACING.length + 1 + 1 +
-            WEBM_CODEC_ID.length + this.codec_id.length + 1 +
-            WEBM_MIN_CACHE.length + 1 + 1 +
-            WEBM_MAX_BLOCK_ADDITION_ID.length + 1 + 1 +
-            WEBM_CODEC_DECODE_ALL.length + 1 + 1 +
-            WEBM_SEEK_PRE_ROLL.length + 1 + 4 +
-            WEBM_TRACK_TYPE.length + 1 + 1 +
-            this.video.buffer_size();
+            WEBM_TRACK_NUMBER.length + LENGTH_PLUS_ONE +
+            WEBM_TRACK_UID.length + LENGTH_PLUS_ONE +
+            WEBM_FLAG_ENABLED.length + LENGTH_PLUS_ONE +
+            WEBM_FLAG_DEFAULT.length + LENGTH_PLUS_ONE +
+            WEBM_FLAG_FORCED.length + LENGTH_PLUS_ONE +
+            WEBM_FLAG_LACING.length + LENGTH_PLUS_ONE +
+            WEBM_CODEC_ID.length + this.codec_idLength + LENGTH_PLUS_ONE +
+            WEBM_MIN_CACHE.length + LENGTH_PLUS_ONE +
+            WEBM_MAX_BLOCK_ADDITION_ID.length + LENGTH_PLUS_ONE +
+            WEBM_CODEC_DECODE_ALL.length + LENGTH_PLUS_ONE +
+            WEBM_SEEK_PRE_ROLL.length + SEEK_PRE_ROLL_SIZE +
+            WEBM_TRACK_TYPE.length + LENGTH_PLUS_ONE +
+            this.videoBufferSize;
     },
-}
 
-function webm_Tracks(entry)
-{
+    to_buffer: function(a, at = 0) {
+        const dv = new DataView(a);
+
+        const writeFns = [
+            EBML_write_array, EBML_write_u64_data_len,
+            EBML_write_u8_value, EBML_write_u8_value,
+            EBML_write_u8_value, EBML_write_u8_value,
+            EBML_write_u8_value, EBML_write_data,
+            EBML_write_u8_value, EBML_write_u8_value,
+            EBML_write_u8_value, EBML_write_u32_value,
+            EBML_write_u8_value
+        ];
+
+        const fieldArgs = [
+            [this.id, dv, at],
+            [this.constantBufferSize - 8 - this.id.length, dv, at],
+            [WEBM_TRACK_NUMBER, this.number, dv, at],
+            [WEBM_TRACK_UID, this.uid, dv, at],
+            [WEBM_FLAG_ENABLED, this.flag_enabled, dv, at],
+            [WEBM_FLAG_DEFAULT, this.flag_default, dv, at],
+            [WEBM_FLAG_FORCED, this.flag_forced, dv, at],
+            [WEBM_FLAG_LACING, this.flag_lacing, dv, at],
+            [WEBM_CODEC_ID, this.codec_id, dv, at],
+            [WEBM_MIN_CACHE, this.min_cache, dv, at],
+            [WEBM_MAX_BLOCK_ADDITION_ID, this.max_block_addition_id, dv, at],
+            [WEBM_CODEC_DECODE_ALL, this.codec_decode_all, dv, at],
+            [WEBM_SEEK_PRE_ROLL, this.seek_pre_roll, dv, at],
+            [WEBM_TRACK_TYPE, this.type, dv, at]
+        ];
+
+        for (let i = 0; i < writeFns.length; i++) {
+            at = writeFns[i](...fieldArgs[i]);
+        }
+
+        return this.video.to_buffer(a, at);
+    },
+
+    buffer_size: function() {
+        return this.constantBufferSize;
+    }
+};
+
+
+function webm_Tracks(entry) {
     this.id = WEBM_TRACKS;
     this.track_entry = entry;
 }
 
-webm_Tracks.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var dv = new DataView(a);
+webm_Tracks.prototype = {
+    to_buffer: function(a, at = 0) {
+        const dv = new DataView(a);
         at = EBML_write_array(this.id, dv, at);
-        at = EBML_write_u64_data_len(this.buffer_size() - 8 - this.id.length, dv, at);
-        at = this.track_entry.to_buffer(a, at);
-        return at;
+        const dataLen = this.buffer_size() - 8 - this.id.length;
+        at = EBML_write_u64_data_len(dataLen, dv, at);
+        return this.track_entry.to_buffer(a, at);
     },
-    buffer_size: function()
-    {
+    buffer_size: function() {
         return this.id.length + 8 +
-                 this.track_entry.buffer_size();
+            this.track_entry.buffer_size();
     },
-}
+};
 
-function webm_Cluster(timecode, data)
-{
+function webm_Cluster(timecode, data) {
     this.id = WEBM_CLUSTER;
     this.timecode = timecode;
     this.data = data;
 }
 
-webm_Cluster.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var dv = new DataView(a);
+webm_Cluster.prototype = {
+    to_buffer: function(a, at = 0) {
+        const dv = new DataView(a);
         at = EBML_write_array(this.id, dv, at);
         dv.setUint8(at++, 0xff);
-        at = EBML_write_u32_value(WEBM_TIME_CODE, this.timecode, dv, at);
-        return at;
+        return EBML_write_u32_value(WEBM_TIME_CODE, this.timecode, dv, at);
     },
-    buffer_size: function()
-    {
+    buffer_size: function() {
         return this.id.length + 1 +
-                 WEBM_TIME_CODE.length + 1 + 4;
+            WEBM_TIME_CODE.length + 5;
     },
-}
+};
 
-function webm_SimpleBlock(timecode, data, keyframe)
-{
+function webm_SimpleBlock(timecode, data, keyframe) {
     this.id = WEBM_SIMPLE_BLOCK;
     this.timecode = timecode;
     this.data = data;
     this.keyframe = keyframe;
 }
 
-webm_SimpleBlock.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var dv = new DataView(a);
+webm_SimpleBlock.prototype = {
+    to_buffer: function(a, at = 0) {
+        const dv = new DataView(a);
         at = EBML_write_array(this.id, dv, at);
         at = EBML_write_u64_data_len(this.data.byteLength + 4, dv, at);
         at = EBML_write_u1_data_len(1, dv, at); // Track #
         dv.setUint16(at, this.timecode); at += 2; // timecode - relative to cluster
         dv.setUint8(at, this.keyframe ? Constants.CLUSTER_SIMPLEBLOCK_FLAG_KEYFRAME : 0); at += 1;  // flags
 
-        // FIXME - There should be a better way to copy
-        var u8 = new Uint8Array(this.data);
-        for (var i = 0; i < this.data.byteLength; i++)
-            dv.setUint8(at++, u8[i]);
+        new Uint8Array(a, at, this.data.byteLength).set(new Uint8Array(this.data));
+        at += this.data.byteLength;
 
         return at;
     },
-    buffer_size: function()
-    {
+    buffer_size: function() {
         return this.id.length + 8 +
-                 1 + 2 + 1 +
-                 this.data.byteLength;
+            4 + this.data.byteLength;
     },
-}
+};
 
-function webm_Header()
-{
-    this.ebml = new EBMLHeader;
-    this.segment = new webm_Segment;
+function webm_Header() {
+    const segmentBufferSize = this.segment.buffer_size();
+    const seekHeadBufferSize = this.seek_head.buffer_size();
+
+    this.ebml = new EBMLHeader();
+    this.segment = new webm_Segment();
     this.seek_head = new webm_SeekHead(0, 0);
 
-    this.seek_head.info.pos = this.segment.buffer_size() + this.seek_head.buffer_size();
+    this.seek_head.info.pos = segmentBufferSize + seekHeadBufferSize;
 
-    this.info = new webm_SegmentInformation;
+    this.info = new webm_SegmentInformation();
 
-    this.seek_head.track.pos = this.seek_head.info.pos + this.info.buffer_size();
+    const infoBufferSize = this.info.buffer_size();
+    this.seek_head.track.pos = this.seek_head.info.pos + infoBufferSize;
 }
 
-webm_Header.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
+webm_Header.prototype = {
+    to_buffer: function(a, at = 0) {
         at = this.ebml.to_buffer(a, at);
         at = this.segment.to_buffer(a, at);
-        at = this.info.to_buffer(a, at);
-
-        return at;
+        return this.info.to_buffer(a, at);
     },
-    buffer_size: function()
-    {
-        return this.ebml.buffer_size() +
-               this.segment.buffer_size() +
-               this.info.buffer_size();
+    buffer_size: function() {
+        const ebmlBufferSize = this.ebml.buffer_size();
+        const segmentBufferSize = this.segment.buffer_size();
+        const infoBufferSize = this.info.buffer_size();
+
+        return ebmlBufferSize + segmentBufferSize + infoBufferSize;
     },
 }
+
 
 export {
   Constants,
