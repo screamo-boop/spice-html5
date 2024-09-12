@@ -145,6 +145,7 @@
 
             document.getElementById('connectButton').onclick = connect;
             document.getElementById('sendCtrlAltDel').addEventListener('click', function(){ SpiceHtml5.sendCtrlAltDel(sc); });
+            document.getElementById('clipboard').addEventListener('click', function(){ SpiceHtml5.simulateClipboardTyping(sc)});
         </script>
 
     </head>
@@ -164,6 +165,7 @@
             <button id="connectButton">Start Connection</button><br>
             <button id="sendCtrlAltDel">Send Ctrl-Alt-Delete</button>
             <button id="debugLogs">Toggle Debug Logs</button>
+            <button id="clipboard">Paste</button>
             <div id="message-div" class="spice-message" style="display: none;"></div>
 
             <div id="debug-div">

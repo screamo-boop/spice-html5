@@ -20,7 +20,7 @@
 
 import * as Messages from './spicemsg.js';
 import { Constants } from './enums.js';
-import { KeyNames } from './atKeynames.js';
+import { KeyNames, keyCodeMap } from './atKeynames.js';
 import { SpiceConn } from './spiceconn.js';
 import { DEBUG } from './utils.js';
 
@@ -173,6 +173,7 @@ function handle_mousewheel(e) {
 function handle_keydown(e) {
     if (!this.sc || this.sc.inputs?.state !== "ready") return;
     const key = new Messages.SpiceMsgcKeyDown(e);
+    console.log(e)
     check_and_update_modifiers(e, key.code, this.sc);
     const msg = new Messages.SpiceMiniData();
     msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_DOWN, key);
@@ -190,6 +191,65 @@ function handle_keyup(e) {
     e.preventDefault();
 }
 
+async function simulateClipboardTyping(sc) {
+    try {
+        const clipboardText = await navigator.clipboard.readText();
+
+        const shiftRequiredRegex = /[A-Z!@#$%^&*()_+{}:"<>?|~]/;
+
+        for (const char of clipboardText) {
+            const isShiftRequired = shiftRequiredRegex.test(char);
+
+            if (isShiftRequired) {
+                const shiftKeyDownEvent = new KeyboardEvent('keydown', {
+                    key: 'Shift',
+                    keyCode: 16,
+                    target: "canvas#spice_surface_0"
+                });
+                const shiftKeyDown = new Messages.SpiceMsgcKeyDown(shiftKeyDownEvent);
+                const msg = new Messages.SpiceMiniData();
+                msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_DOWN, shiftKeyDown);
+                sc.inputs.send_msg(msg);
+            }
+
+            const keyCode = keyCodeMap[char]; 
+            const keyDownEvent = new KeyboardEvent('keydown', {
+                key: char,
+                keyCode: keyCode,
+                target: "canvas#spice_surface_0"
+            });
+            const key = new Messages.SpiceMsgcKeyDown(keyDownEvent);
+            const msg = new Messages.SpiceMiniData();
+            msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_DOWN, key);
+            sc.inputs.send_msg(msg);
+
+
+            const keyUpEvent = new KeyboardEvent('keyup', {
+                key: char,
+                keyCode: keyCode,
+                target: "canvas#spice_surface_0"
+            });
+            const keyup = new Messages.SpiceMsgcKeyUp(keyUpEvent);
+            msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_UP, keyup);
+            sc.inputs.send_msg(msg);
+
+            if (isShiftRequired) {
+
+                const shiftKeyUpEvent = new KeyboardEvent('keyup', {
+                    key: 'Shift',
+                    keyCode: 16,
+                    target: "canvas#spice_surface_0"
+                });
+                const shiftKeyUp = new Messages.SpiceMsgcKeyUp(shiftKeyUpEvent);
+                msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_UP, shiftKeyUp);
+                sc.inputs.send_msg(msg);
+            }
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    } catch (err) {
+        console.error('Failed to read clipboard contents: ', err);
+    }
+}
 
 
 function sendCtrlAltDel(sc) {
@@ -282,4 +342,5 @@ export {
   handle_keydown,
   handle_keyup,
   sendCtrlAltDel,
+  simulateClipboardTyping,
 };
