@@ -198,6 +198,32 @@ async function simulateClipboardTyping(sc) {
         const shiftRequiredRegex = /[A-Z!@#$%^&*()_+{}:"<>?|~]/;
 
         for (const char of clipboardText) {
+            if (char === '\n') {
+                const enterKeyCode = 13;
+
+                const enterKeyDownEvent = new KeyboardEvent('keydown', {
+                    key: 'Enter',
+                    keyCode: enterKeyCode,
+                    target: "canvas#spice_surface_0"
+                });
+                const enterKeyDown = new Messages.SpiceMsgcKeyDown(enterKeyDownEvent);
+                const msg = new Messages.SpiceMiniData();
+                msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_DOWN, enterKeyDown);
+                sc.inputs.send_msg(msg);
+
+                const enterKeyUpEvent = new KeyboardEvent('keyup', {
+                    key: 'Enter',
+                    keyCode: enterKeyCode,
+                    target: "canvas#spice_surface_0"
+                });
+                const enterKeyUp = new Messages.SpiceMsgcKeyUp(enterKeyUpEvent);
+                msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_UP, enterKeyUp);
+                sc.inputs.send_msg(msg);
+
+                await new Promise(resolve => setTimeout(resolve, 1));
+                continue;
+            }
+
             const isShiftRequired = shiftRequiredRegex.test(char);
 
             if (isShiftRequired) {
@@ -212,7 +238,7 @@ async function simulateClipboardTyping(sc) {
                 sc.inputs.send_msg(msg);
             }
 
-            const keyCode = keyCodeMap[char]; 
+            const keyCode = keyCodeMap[char];
             const keyDownEvent = new KeyboardEvent('keydown', {
                 key: char,
                 keyCode: keyCode,
@@ -222,7 +248,6 @@ async function simulateClipboardTyping(sc) {
             const msg = new Messages.SpiceMiniData();
             msg.build_msg(Constants.SPICE_MSGC_INPUTS_KEY_DOWN, key);
             sc.inputs.send_msg(msg);
-
 
             const keyUpEvent = new KeyboardEvent('keyup', {
                 key: char,
@@ -234,7 +259,6 @@ async function simulateClipboardTyping(sc) {
             sc.inputs.send_msg(msg);
 
             if (isShiftRequired) {
-
                 const shiftKeyUpEvent = new KeyboardEvent('keyup', {
                     key: 'Shift',
                     keyCode: 16,
@@ -250,7 +274,6 @@ async function simulateClipboardTyping(sc) {
         console.error('Failed to read clipboard contents: ', err);
     }
 }
-
 
 function sendCtrlAltDel(sc) {
     if (sc && sc.inputs && sc.inputs.state === "ready") {
