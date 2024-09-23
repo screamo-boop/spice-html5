@@ -46,108 +46,106 @@
 
         <script type="module" crossorigin="anonymous">
             import * as SpiceHtml5 from './src/main.js';
-
-            var host = null, port = null;
-            var sc;
-
-            function spice_error(e)
-            {
+        
+            let sc = null;
+        
+            // Cache DOM elements to reduce repeated lookups
+            const hostInput = document.getElementById("host");
+            const portInput = document.getElementById("port");
+            const passwordInput = document.getElementById("password");
+            const connectButton = document.getElementById('connectButton');
+            const spiceArea = document.getElementById('spice-area');
+            const sendCtrlAltDelButton = document.getElementById('sendCtrlAltDel');
+            const clipboardButton = document.getElementById('clipboard');
+            const sendCtrlAltFDropdown = document.getElementById('sendCtrlAltFDropdown');
+        
+            function spice_error(e) {
                 disconnect();
             }
-
-            function connect()
-            {
-                var host, port, password, scheme = "ws://", uri;
-
-                host = document.getElementById("host").value;
-                port = document.getElementById("port").value;
-                password = document.getElementById("password").value;
-
-
-                if ((!host) || (!port)) {
-                    console.log("must set host and port");
+        
+            function connect() {
+                const scheme = "ws://";
+                const host = hostInput.value;
+                const port = portInput.value;
+                const password = passwordInput.value;
+        
+                if (!host || !port) {
+                    console.log("Must set host and port");
                     return;
                 }
-
+        
                 if (sc) {
                     sc.stop();
+                    sc = null;
                 }
-
-                uri = scheme + host + ":" + port;
-
-                document.getElementById('connectButton').innerHTML = "Stop Connection";
-                document.getElementById('connectButton').onclick = disconnect;
-
-                try
-                {
-                    sc = new SpiceHtml5.SpiceMainConn({uri: uri, screen_id: "spice-screen", dump_id: "debug-div",
-                                message_id: "message-div", password: password, onerror: spice_error, onagent: agent_connected });
-                }
-                catch (e)
-                {
+        
+                const uri = `${scheme}${host}:${port}`;
+                connectButton.textContent = "Stop Connection";
+                connectButton.onclick = disconnect;
+        
+                try {
+                    sc = new SpiceHtml5.SpiceMainConn({
+                        uri: uri,
+                        screen_id: "spice-screen",
+                        dump_id: "debug-div",
+                        message_id: "message-div",
+                        password: password,
+                        onerror: spice_error,
+                        onagent: agent_connected
+                    });
+                } catch (e) {
                     alert(e.toString());
                     disconnect();
                 }
-
             }
-
-            function disconnect()
-            {
+        
+            function disconnect() {
                 console.log(">> disconnect");
                 if (sc) {
                     sc.stop();
+                    sc = null; // Clear reference for garbage collection
                 }
-                document.getElementById('connectButton').innerHTML = "Start Connection";
-                document.getElementById('connectButton').onclick = connect;
-                if (window.File && window.FileReader && window.FileList && window.Blob)
-                {
-                    var spice_xfer_area = document.getElementById('spice-xfer-area');
-                    if (spice_xfer_area != null) {
-                      document.getElementById('spice-area').removeChild(spice_xfer_area);
+        
+                connectButton.textContent = "Start Connection";
+                connectButton.onclick = connect;
+        
+                if (window.File && window.FileReader && window.FileList && window.Blob) {
+                    const spiceXferArea = document.getElementById('spice-xfer-area');
+                    if (spiceXferArea) {
+                        spiceArea.removeChild(spiceXferArea);
                     }
-                    document.getElementById('spice-area').removeEventListener('dragover', SpiceHtml5.handle_file_dragover, false);
-                    document.getElementById('spice-area').removeEventListener('drop', SpiceHtml5.handle_file_drop, false);
+                    spiceArea.removeEventListener('dragover', SpiceHtml5.handle_file_dragover, false);
+                    spiceArea.removeEventListener('drop', SpiceHtml5.handle_file_drop, false);
                 }
                 console.log("<< disconnect");
             }
-
-            function agent_connected(sc)
-            {
+        
+            function agent_connected() {
                 window.addEventListener('resize', SpiceHtml5.handle_resize);
-                window.spice_connection = this;
-
-                SpiceHtml5.resize_helper(this);
-
-                if (window.File && window.FileReader && window.FileList && window.Blob)
-                {
-                    var spice_xfer_area = document.createElement("div");
-                    spice_xfer_area.setAttribute('id', 'spice-xfer-area');
-                    document.getElementById('spice-area').appendChild(spice_xfer_area);
-                    document.getElementById('spice-area').addEventListener('dragover', SpiceHtml5.handle_file_dragover, false);
-                    document.getElementById('spice-area').addEventListener('drop', SpiceHtml5.handle_file_drop, false);
-                }
-                else
-                {
+                window.spice_connection = sc;
+                SpiceHtml5.resize_helper(sc);
+        
+                if (window.File && window.FileReader && window.FileList && window.Blob) {
+                    const spiceXferArea = document.createElement("div");
+                    spiceXferArea.id = 'spice-xfer-area';
+                    spiceArea.appendChild(spiceXferArea);
+                    spiceArea.addEventListener('dragover', SpiceHtml5.handle_file_dragover, false);
+                    spiceArea.addEventListener('drop', SpiceHtml5.handle_file_drop, false);
+                } else {
                     console.log("File API is not supported");
                 }
             }
-            /* SPICE port event listeners
-            window.addEventListener('spice-port-data', function(event) {
-                // Here we convert data to text, but really we can obtain binary data also
-                var msg_text = arraybuffer_to_str(new Uint8Array(event.detail.data));
-                DEBUG > 0 && console.log('SPICE port', event.detail.channel.portName, 'message text:', msg_text);
+        
+            // Set up event listeners using cached elements
+            connectButton.onclick = connect;
+            sendCtrlAltDelButton.addEventListener('click', () => { SpiceHtml5.sendCtrlAltDel(sc); });
+            clipboardButton.addEventListener('click', () => { SpiceHtml5.simulateClipboardTyping(sc); });
+            sendCtrlAltFDropdown.addEventListener('change', function() {
+                SpiceHtml5.sendCtrlAltF(sc, this.value);
+                this.selectedIndex = 0;
             });
-
-            window.addEventListener('spice-port-event', function(event) {
-                DEBUG > 0 && console.log('SPICE port', event.detail.channel.portName, 'event data:', event.detail.spiceEvent);
-            });
-            */
-
-            document.getElementById('connectButton').onclick = connect;
-            document.getElementById('sendCtrlAltDel').addEventListener('click', function(){ SpiceHtml5.sendCtrlAltDel(sc); });
-            document.getElementById('clipboard').addEventListener('click', function(){ SpiceHtml5.simulateClipboardTyping(sc)});
-            document.getElementById('sendCtrlAltFDropdown').addEventListener('change', function(){ SpiceHtml5.sendCtrlAltF(sc, this.value); this.selectedIndex = 0; })
         </script>
+        
 
     </head>
 

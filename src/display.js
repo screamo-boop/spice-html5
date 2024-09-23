@@ -877,68 +877,91 @@ function handle_mouseout(e)
 }
 
 function handle_draw_jpeg_onload() {
-    let temp_canvas = null;
-    let context;
     const o = this.o;
+    if (!o) return;
 
-    if (o?.sc?.streams?.[o.id]) {
-        o.sc.streams[o.id].frames_loading--;
+    const sc = o.sc;
+    const streams = sc?.streams;
+    const surfaces = sc?.surfaces;
+    const base = o.base;
+    const descriptor = o.descriptor;
+    const cache = sc.cache || (sc.cache = {});
+    const parent = sc.parent;
+
+    const stream = streams?.[o.id];
+    if (stream) {
+        stream.frames_loading--;
     }
 
-    if (!o || !o.base || o.sc.surfaces[o.base.surface_id] === undefined) {
-        Utils.DEBUG > 2 && o?.sc?.log_info?.("Discarding jpeg; presumed lost surface " + (o.base ? o.base.surface_id : 'unknown surface id'));
-        temp_canvas = document.createElement("canvas");
-        const baseBox = o.base?.box || { right: 0, bottom: 0 };
-        temp_canvas.width = baseBox.right;
-        temp_canvas.height = baseBox.bottom;
-        context = temp_canvas.getContext("2d");
+    let context;
+    if (!base || !surfaces?.[base.surface_id]) {
+        if (Utils.DEBUG > 2) {
+            sc?.log_info?.(`Discarding JPEG; presumed lost surface ${base ? base.surface_id : 'unknown surface id'}`);
+        }
+        // Create a temporary canvas with minimal dimensions
+        const tempCanvas = document.createElement("canvas");
+        const baseBox = base?.box || { right: 0, bottom: 0 };
+        tempCanvas.width = baseBox.right;
+        tempCanvas.height = baseBox.bottom;
+        context = tempCanvas.getContext("2d");
     } else {
-        context = o.sc.surfaces[o.base.surface_id].canvas.context;
+        context = surfaces[base.surface_id].canvas.context;
     }
+
+    const baseBox = base?.box || { left: 0, top: 0, right: 0, bottom: 0 };
 
     if (this.alpha_img) {
-        const c = document.createElement("canvas");
-        c.width = this.alpha_img.width;
-        c.height = this.alpha_img.height;
-        const t = c.getContext("2d");
+        const alphaWidth = this.alpha_img.width;
+        const alphaHeight = this.alpha_img.height;
 
-        t.putImageData(this.alpha_img, 0, 0);
-        t.globalCompositeOperation = 'source-in';
-        t.drawImage(this, 0, 0);
+        // Use an offscreen canvas for compositing
+        const offscreenCanvas = document.createElement("canvas");
+        offscreenCanvas.width = alphaWidth;
+        offscreenCanvas.height = alphaHeight;
+        const offscreenContext = offscreenCanvas.getContext("2d");
 
-        const baseBox = o.base?.box || { left: 0, top: 0 };
-        context.drawImage(c, baseBox.left, baseBox.top);
+        offscreenContext.putImageData(this.alpha_img, 0, 0);
+        offscreenContext.globalCompositeOperation = 'source-in';
+        offscreenContext.drawImage(this, 0, 0);
 
-        const descriptor = o.descriptor;
+        context.drawImage(offscreenCanvas, baseBox.left, baseBox.top);
+
         if (descriptor?.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME) {
-            o.sc.cache ||= {};
-            o.sc.cache[descriptor.id] = t.getImageData(0, 0, this.alpha_img.width, this.alpha_img.height);
+            cache[descriptor.id] = offscreenContext.getImageData(0, 0, alphaWidth, alphaHeight);
         }
     } else {
-        const baseBox = o.base?.box || { left: 0, top: 0, right: 0, bottom: 0 };
         context.drawImage(this, baseBox.left, baseBox.top);
 
+        // Clean up to free memory
         this.onload = null;
         this.src = Utils.EMPTY_GIF_IMAGE;
 
-        const descriptor = o.descriptor;
         if (descriptor?.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME) {
-            o.sc.cache ||= {};
-            o.sc.cache[descriptor.id] = context.getImageData(baseBox.left, baseBox.top, baseBox.right - baseBox.left, baseBox.bottom - baseBox.top);
+            const width = baseBox.right - baseBox.left;
+            const height = baseBox.bottom - baseBox.top;
+            cache[descriptor.id] = context.getImageData(baseBox.left, baseBox.top, width, height);
         }
     }
 
-    if (!temp_canvas && Utils.DUMP_DRAWS && o.sc.parent?.dump_id) {
-        const debug_canvas = document.createElement("canvas");
-        const drawCount = o.sc.surfaces[o.base.surface_id].draw_count;
-        debug_canvas.id = `${o.tag}.${drawCount}.${o.base.surface_id}@${baseBox.left}x${baseBox.top}`;
-        debug_canvas.getContext("2d").drawImage(this, 0, 0);
-        document.getElementById(o.sc.parent.dump_id).appendChild(debug_canvas);
-        o.sc.surfaces[o.base.surface_id].draw_count++;
+    if (Utils.DUMP_DRAWS && parent?.dump_id) {
+        const surface = surfaces[base.surface_id];
+        if (surface) {
+            const drawCount = surface.draw_count || 0;
+            const debugCanvas = document.createElement("canvas");
+            debugCanvas.id = `${o.tag}.${drawCount}.${base.surface_id}@${baseBox.left}x${baseBox.top}`;
+            debugCanvas.width = baseBox.right - baseBox.left;
+            debugCanvas.height = baseBox.bottom - baseBox.top;
+
+            const debugContext = debugCanvas.getContext("2d");
+            debugContext.drawImage(this, 0, 0);
+
+            document.getElementById(parent.dump_id).appendChild(debugCanvas);
+            surface.draw_count = drawCount + 1;
+        }
     }
 
-    if (o.sc.streams?.[o.id]?.report) {
-        process_stream_data_report(o.sc, o.id, this.o.msg_mmtime, this.o.msg_mmtime - o.sc.parent.relative_now());
+    if (stream?.report) {
+        process_stream_data_report(sc, o.id, o.msg_mmtime, o.msg_mmtime - parent.relative_now());
     }
 }
 
