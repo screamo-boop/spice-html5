@@ -290,7 +290,7 @@ function sendCtrlAltDel(sc) {
 
         update_modifier(false, KeyNames.KEY_LCtrl, sc);
         update_modifier(false, KeyNames.KEY_Alt, sc);
-        update_modifier(true, KeyNames.KEY_ShiftL, sc)
+        update_modifier(false, KeyNames.KEY_ShiftL, sc)
     }
 }
 
