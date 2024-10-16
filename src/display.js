@@ -186,62 +186,36 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg)
                       descriptor : draw_copy.data.src_bitmap.descriptor
                     });
             }
-            else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_JPEG)
-                {
-                    if (!draw_copy.data.src_bitmap.jpeg)
-                    {
-                        this.log_warn("DrawCopy could not handle this JPEG file.");
-                        return false;
-                    }
-                
-                    var binary = '';
-                    var bytes = new Uint8Array(draw_copy.data.src_bitmap.jpeg.data);
-                    var len = bytes.byteLength;
-                    for (var i = 0; i < len; i++) {
-                        binary += String.fromCharCode(bytes[i]);
-                    }
-                    var base64String = window.btoa(binary);
-                
-                    var img = new Image();
-                    img.o =
-                        { base: draw_copy.base,
-                          tag: "jpeg." + draw_copy.data.src_bitmap.surface_id,
-                          descriptor: draw_copy.data.src_bitmap.descriptor,
-                          sc: this,
-                        };
-                    img.onload = handle_draw_jpeg_onload;
-                    img.src = "data:image/jpeg;base64," + base64String;
-                
-                    return true;
+            else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_JPEG_ALPHA) {
+                if (!draw_copy.data.src_bitmap.jpeg_alpha) {
+                    this.log_warn("DrawCopy could not handle this JPEG ALPHA file.");
+                    return false;
                 }
-                else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_JPEG_ALPHA) {
-                    if (!draw_copy.data.src_bitmap.jpeg_alpha) {
-                        this.log_warn("DrawCopy could not handle this JPEG ALPHA file.");
-                        return false;
-                    }
-                
-                    const byteArray = new Uint8Array(draw_copy.data.src_bitmap.jpeg_alpha.data);
-                    const base64String = btoa(String.fromCharCode(...byteArray));
-                    const tmpstr = "data:image/jpeg;base64," + base64String;
-                
-                    const img = new Image();
-                    img.o = {
-                        base: draw_copy.base,
-                        tag: "jpeg." + draw_copy.data.src_bitmap.surface_id,
-                        descriptor: draw_copy.data.src_bitmap.descriptor,
-                        sc: this,
-                    };
-                
-                    if (this.surfaces[draw_copy.base.surface_id].format == Constants.SPICE_SURFACE_FMT_32_ARGB) {
-                        const canvas = this.surfaces[draw_copy.base.surface_id].canvas;
-                        img.alpha_img = convert_spice_lz_to_web(canvas.context, draw_copy.data.src_bitmap.jpeg_alpha.alpha);
-                    }
-                
-                    img.onload = handle_draw_jpeg_onload;
-                    img.src = tmpstr;
-                
-                    return true;
+            
+                const byteArray = new Uint8Array(draw_copy.data.src_bitmap.jpeg_alpha.data);
+                const blob = new Blob([byteArray], { type: 'image/jpeg' });
+                const img = new Image();
+            
+                img.o = {
+                    base: draw_copy.base,
+                    tag: "jpeg." + draw_copy.data.src_bitmap.surface_id,
+                    descriptor: draw_copy.data.src_bitmap.descriptor,
+                    sc: this,
+                };
+            
+                if (this.surfaces[draw_copy.base.surface_id].format == Constants.SPICE_SURFACE_FMT_32_ARGB) {
+                    const canvas = this.surfaces[draw_copy.base.surface_id].canvas;
+                    img.alpha_img = convert_spice_lz_to_web(canvas.context, draw_copy.data.src_bitmap.jpeg_alpha.alpha);
                 }
+            
+                img.onload = function() {
+                    URL.revokeObjectURL(img.src);
+                    handle_draw_jpeg_onload.call(this);
+                };
+                img.src = URL.createObjectURL(blob);
+            
+                return true;
+            }
                 
             else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_BITMAP)
             {
