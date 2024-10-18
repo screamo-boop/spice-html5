@@ -29,12 +29,21 @@ import { SpiceRect } from './spicetype.js';
 import { convert_spice_lz_to_web } from './lz.js';
 import { convert_spice_bitmap_to_web } from './bitmap.js';
 
-function putImageDataWithAlpha(context, imageData, x, y) {
-    const offscreenCanvas = new OffscreenCanvas(imageData.width, imageData.height);
-    const offscreenContext = offscreenCanvas.getContext("2d");
-    offscreenContext.putImageData(imageData, 0, 0);
-    context.drawImage(offscreenCanvas, x, y);
-    offscreenContext.clearRect(0, 0, imageData.width, imageData.height);
+/*----------------------------------------------------------------------------
+**  FIXME: putImageData  does not support Alpha blending
+**           or compositing.  So if we have data in an ImageData
+**           format, we have to draw it onto a context,
+**           and then use drawImage to put it onto the target,
+**           as drawImage does alpha.
+**--------------------------------------------------------------------------*/
+function putImageDataWithAlpha(context, d, x, y)
+{
+    var c = document.createElement("canvas");
+    var t = c.getContext("2d");
+    c.setAttribute('width', d.width);
+    c.setAttribute('height', d.height);
+    t.putImageData(d, 0, 0);
+    context.drawImage(c, x, y, d.width, d.height);
 }
 
 /*----------------------------------------------------------------------------
@@ -91,8 +100,6 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg)
 
         if (! draw_copy.base.box.is_same_size(draw_copy.data.src_area))
             this.log_warn("FIXME: DrawCopy src_area is a different size than base.box; we do not handle that yet.");
-        if (draw_copy.base.clip.type != Constants.SPICE_CLIP_TYPE_NONE)
-            this.log_warn("FIXME: DrawCopy we don't handle clipping yet");
         if (draw_copy.data.rop_descriptor != Constants.SPICE_ROPD_OP_PUT)
             this.log_warn("FIXME: DrawCopy we don't handle ropd type: " + draw_copy.data.rop_descriptor);
         if (draw_copy.data.mask.flags)
@@ -164,18 +171,11 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg)
                 computed_src_area.right = source_img.width;
                 computed_src_area.bottom = source_img.height;
 
-                if (draw_copy.data.src_area.left === 0 && draw_copy.data.src_area.top === 0 &&
-                    this.surfaces[draw_copy.data.src_bitmap.surface_id].format === Constants.SPICE_SURFACE_FMT_32_xRGB &&
-                    this.surfaces[draw_copy.base.surface_id].format === Constants.SPICE_SURFACE_FMT_32_xRGB) {
-            
-                    target_context.drawImage(
-                        this.surfaces[draw_copy.data.src_bitmap.surface_id].canvas,
-                        computed_src_area.left, computed_src_area.top, computed_src_area.right, computed_src_area.bottom,
-                        draw_copy.base.left, draw_copy.base.top, computed_src_area.right, computed_src_area.bottom
-                    );
-            
-                    return;
-                }
+                /* FIXME - there is a potential optimization here.
+                           That is, if the surface is from 0,0, and
+                           both surfaces are alpha surfaces, you should
+                           be able to just do a drawImage, which should
+                           save time.  */
 
                 return this.draw_copy_helper(
                     { base: draw_copy.base,
@@ -186,37 +186,80 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg)
                       descriptor : draw_copy.data.src_bitmap.descriptor
                     });
             }
-            else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_JPEG_ALPHA) {
-                if (!draw_copy.data.src_bitmap.jpeg_alpha) {
-                    this.log_warn("DrawCopy could not handle this JPEG ALPHA file.");
+            else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_JPEG)
+            {
+                if (! draw_copy.data.src_bitmap.jpeg)
+                {
+                    this.log_warn("FIXME: DrawCopy could not handle this JPEG file.");
                     return false;
                 }
-            
-                const byteArray = new Uint8Array(draw_copy.data.src_bitmap.jpeg_alpha.data);
-                const blob = new Blob([byteArray], { type: 'image/jpeg' });
-                const img = new Image();
-            
-                img.o = {
-                    base: draw_copy.base,
-                    tag: "jpeg." + draw_copy.data.src_bitmap.surface_id,
-                    descriptor: draw_copy.data.src_bitmap.descriptor,
-                    sc: this,
-                };
-            
-                if (this.surfaces[draw_copy.base.surface_id].format == Constants.SPICE_SURFACE_FMT_32_ARGB) {
-                    const canvas = this.surfaces[draw_copy.base.surface_id].canvas;
-                    img.alpha_img = convert_spice_lz_to_web(canvas.context, draw_copy.data.src_bitmap.jpeg_alpha.alpha);
+
+                // FIXME - how lame is this.  Be have it in binary format, and we have
+                //         to put it into string to get it back into jpeg.  Blech.
+                var tmpstr = "data:image/jpeg,";
+                var img = new Image;
+                var i;
+                var qdv = new Uint8Array(draw_copy.data.src_bitmap.jpeg.data);
+                for (i = 0; i < qdv.length; i++)
+                {
+                    tmpstr +=  '%';
+                    if (qdv[i] < 16)
+                        tmpstr += '0';
+                    tmpstr += qdv[i].toString(16);
                 }
-            
-                img.onload = function() {
-                    URL.revokeObjectURL(img.src);
-                    handle_draw_jpeg_onload.call(this);
-                };
-                img.src = URL.createObjectURL(blob);
-            
+
+                img.o =
+                    { base: draw_copy.base,
+                      tag: "jpeg." + draw_copy.data.src_bitmap.surface_id,
+                      descriptor : draw_copy.data.src_bitmap.descriptor,
+                      sc : this,
+                    };
+                img.onload = handle_draw_jpeg_onload;
+                img.src = tmpstr;
+
                 return true;
             }
-                
+            else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_JPEG_ALPHA)
+            {
+                if (! draw_copy.data.src_bitmap.jpeg_alpha)
+                {
+                    this.log_warn("FIXME: DrawCopy could not handle this JPEG ALPHA file.");
+                    return false;
+                }
+
+                // FIXME - how lame is this.  Be have it in binary format, and we have
+                //         to put it into string to get it back into jpeg.  Blech.
+                var tmpstr = "data:image/jpeg,";
+                var img = new Image;
+                var i;
+                var qdv = new Uint8Array(draw_copy.data.src_bitmap.jpeg_alpha.data);
+                for (i = 0; i < qdv.length; i++)
+                {
+                    tmpstr +=  '%';
+                    if (qdv[i] < 16)
+                        tmpstr += '0';
+                    tmpstr += qdv[i].toString(16);
+                }
+
+                img.o =
+                    { base: draw_copy.base,
+                      tag: "jpeg." + draw_copy.data.src_bitmap.surface_id,
+                      descriptor : draw_copy.data.src_bitmap.descriptor,
+                      sc : this,
+                    };
+
+                if (this.surfaces[draw_copy.base.surface_id].format == Constants.SPICE_SURFACE_FMT_32_ARGB)
+                {
+
+                    var canvas = this.surfaces[draw_copy.base.surface_id].canvas;
+                    img.alpha_img = convert_spice_lz_to_web(canvas.context,
+                                            draw_copy.data.src_bitmap.jpeg_alpha.alpha);
+                }
+                img.onload = handle_draw_jpeg_onload;
+                img.src = tmpstr;
+
+                return true;
+            }
             else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_BITMAP)
             {
                 var canvas = this.surfaces[draw_copy.base.surface_id].canvas;
@@ -851,94 +894,74 @@ function handle_mouseout(e)
 }
 
 function handle_draw_jpeg_onload() {
-    const o = this.o;
-    if (!o) return;
+    var temp_canvas = null;
+    var context;
 
-    const sc = o.sc;
-    const streams = sc?.streams;
-    const surfaces = sc?.surfaces;
-    const base = o.base;
-    const descriptor = o.descriptor;
-    const cache = sc.cache || (sc.cache = {});
-    const parent = sc.parent;
-
-    const stream = streams?.[o.id];
-    if (stream) {
-        stream.frames_loading--;
+    if (this.o && this.o.sc && this.o.sc.streams && this.o.id && this.o.sc.streams[this.o.id]) {
+        this.o.sc.streams[this.o.id].frames_loading--;
     }
 
-    let context;
-    if (!base || !surfaces?.[base.surface_id]) {
-        if (Utils.DEBUG > 2) {
-            sc?.log_info?.(`Discarding JPEG; presumed lost surface ${base ? base.surface_id : 'unknown surface id'}`);
-        }
-        // Create a temporary canvas with minimal dimensions
-        const tempCanvas = document.createElement("canvas");
-        const baseBox = base?.box || { right: 0, bottom: 0 };
-        tempCanvas.width = baseBox.right;
-        tempCanvas.height = baseBox.bottom;
-        context = tempCanvas.getContext("2d");
+    if (!this.o || !this.o.base || this.o.sc.surfaces[this.o.base.surface_id] === undefined) {
+        Utils.DEBUG > 2 && this.o.sc && this.o.sc.log_info && this.o.sc.log_info("Discarding jpeg; presumed lost surface " + (this.o.base ? this.o.base.surface_id : 'unknown surface id'));
+        temp_canvas = document.createElement("canvas");
+        temp_canvas.setAttribute('width', this.o.base ? this.o.base.box.right : 0);
+        temp_canvas.setAttribute('height', this.o.base ? this.o.base.box.bottom : 0);
+        context = temp_canvas.getContext("2d");
     } else {
-        context = surfaces[base.surface_id].canvas.context;
+        context = this.o.sc.surfaces[this.o.base.surface_id].canvas.context;
     }
-
-    const baseBox = base?.box || { left: 0, top: 0, right: 0, bottom: 0 };
 
     if (this.alpha_img) {
-        const alphaWidth = this.alpha_img.width;
-        const alphaHeight = this.alpha_img.height;
+        var c = document.createElement("canvas");
+        var t = c.getContext("2d");
+        c.setAttribute('width', this.alpha_img.width);
+        c.setAttribute('height', this.alpha_img.height);
+        t.putImageData(this.alpha_img, 0, 0);
+        t.globalCompositeOperation = 'source-in';
+        t.drawImage(this, 0, 0);
 
-        // Use an offscreen canvas for compositing
-        const offscreenCanvas = document.createElement("canvas");
-        offscreenCanvas.width = alphaWidth;
-        offscreenCanvas.height = alphaHeight;
-        const offscreenContext = offscreenCanvas.getContext("2d");
+        context.drawImage(c, this.o.base ? this.o.base.box.left : 0, this.o.base ? this.o.base.box.top : 0);
 
-        offscreenContext.putImageData(this.alpha_img, 0, 0);
-        offscreenContext.globalCompositeOperation = 'source-in';
-        offscreenContext.drawImage(this, 0, 0);
+        if (this.o.descriptor && (this.o.descriptor.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME)) {
+            if (!this.o.sc.cache) {
+                this.o.sc.cache = {};
+            }
 
-        context.drawImage(offscreenCanvas, baseBox.left, baseBox.top);
-
-        if (descriptor?.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME) {
-            cache[descriptor.id] = offscreenContext.getImageData(0, 0, alphaWidth, alphaHeight);
+            this.o.sc.cache[this.o.descriptor.id] = t.getImageData(0, 0, this.alpha_img.width, this.alpha_img.height);
         }
     } else {
-        context.drawImage(this, baseBox.left, baseBox.top);
+        context.drawImage(this, this.o.base ? this.o.base.box.left : 0, this.o.base ? this.o.base.box.top : 0);
 
-        // Clean up to free memory
-        this.onload = null;
+        this.onload = undefined;
         this.src = Utils.EMPTY_GIF_IMAGE;
 
-        if (descriptor?.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME) {
-            const width = baseBox.right - baseBox.left;
-            const height = baseBox.bottom - baseBox.top;
-            cache[descriptor.id] = context.getImageData(baseBox.left, baseBox.top, width, height);
+        if (this.o.descriptor && (this.o.descriptor.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME)) {
+            if (!this.o.sc.cache) {
+                this.o.sc.cache = {};
+            }
+
+            this.o.sc.cache[this.o.descriptor.id] = context.getImageData(this.o.base.box.left, this.o.base.box.top,
+                this.o.base.box.right - this.o.base.box.left, this.o.base.box.bottom - this.o.base.box.top);
         }
     }
 
-    if (Utils.DUMP_DRAWS && parent?.dump_id) {
-        const surface = surfaces[base.surface_id];
-        if (surface) {
-            const drawCount = surface.draw_count || 0;
-            const debugCanvas = document.createElement("canvas");
-            debugCanvas.id = `${o.tag}.${drawCount}.${base.surface_id}@${baseBox.left}x${baseBox.top}`;
-            debugCanvas.width = baseBox.right - baseBox.left;
-            debugCanvas.height = baseBox.bottom - baseBox.top;
-
-            const debugContext = debugCanvas.getContext("2d");
-            debugContext.drawImage(this, 0, 0);
-
-            document.getElementById(parent.dump_id).appendChild(debugCanvas);
-            surface.draw_count = drawCount + 1;
+    if (temp_canvas == null) {
+        if (Utils.DUMP_DRAWS && this.o.sc.parent && this.o.sc.parent.dump_id) {
+            var debug_canvas = document.createElement("canvas");
+            debug_canvas.setAttribute('id', this.o.tag + "." +
+                this.o.sc.surfaces[this.o.base.surface_id].draw_count + "." +
+                this.o.base.surface_id + "@" + this.o.base.box.left + "x" +  this.o.base.box.top);
+            debug_canvas.getContext("2d").drawImage(this, 0, 0);
+            document.getElementById(this.o.sc.parent.dump_id).appendChild(debug_canvas);
         }
+
+        this.o.sc.surfaces[this.o.base.surface_id].draw_count++;
     }
 
-    if (stream?.report) {
-        process_stream_data_report(sc, o.id, o.msg_mmtime, o.msg_mmtime - parent.relative_now());
+    if (this.o.sc.streams && this.o.sc.streams[this.o.id] && this.o.sc.streams[this.o.id].report) {
+        process_stream_data_report(this.o.sc, this.o.id, this.o.msg_mmtime, this.o.msg_mmtime - this.o.sc.parent.relative_now());
     }
 }
-
 
 
 function process_mjpeg_stream_data(sc, m, time_until_due)
