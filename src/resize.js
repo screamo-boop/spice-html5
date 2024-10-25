@@ -49,9 +49,6 @@ function resizeHelper(sc) {
         }
     }
 
-    width -= width % 8;
-    height -= height % 8;
-
     sc.resize_window(0, width, height, 32, 0, 0);
     sc.spice_resize_timer = undefined;
 }
