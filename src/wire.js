@@ -28,105 +28,102 @@
 import { DEBUG } from './utils.js';
 import { combine_array_buffers } from './utils.js';
 
-function SpiceWireReader(sc, callback)
-{
+function SpiceWireReader(sc, callback) {
     this.sc = sc;
     this.callback = callback;
     this.needed = 0;
     this.size = 0;
+    this.saved_msg_header = undefined;
 
-    this.buffers = [];
+    this.buffers = {
+        buffersArray: [],
+        currentIndex: 0,
+        currentOffset: 0,
+    };
 
     this.sc.ws.wire_reader = this;
     this.sc.ws.binaryType = "arraybuffer";
     this.sc.ws.addEventListener('message', wire_blob_catcher);
 }
 
-SpiceWireReader.prototype =
-{
+SpiceWireReader.prototype = {
 
     /*------------------------------------------------------------------------
     **  Process messages coming in from our WebSocket
     **----------------------------------------------------------------------*/
-    inbound: function (mb)
-    {
-        var at;
-
-        /* Just buffer if we don't need anything yet */
-        if (this.needed == 0)
-        {
-            this.buffers.push(mb);
+    inbound: function(mb) {
+        if (this.needed == 0) {
+            this.buffers.buffersArray.push(mb);
             this.size += mb.byteLength;
             return;
         }
 
-        /* Optimization - if we have just one inbound block, and it's
-            suitable for our needs, just use it.  */
-            if (this.buffers.length === 0 && mb.byteLength >= this.needed) {
-                if (mb.byteLength > this.needed) {
-                    // Since we're slicing mb when byteLength exceeds needed, slice directly
-                    // without reallocating memory unnecessarily.
-                    this.buffers.push(mb.slice(this.needed));
-                    this.size = mb.byteLength - this.needed;
-                }
-                // Directly use the required slice of mb for the callback
-                const toProcess = mb.slice(0, this.needed);
-                this.callback.call(this.sc, toProcess, this.saved_msg_header);
+        if ((this.buffers.buffersArray.length - this.buffers.currentIndex === 0) && mb.byteLength >= this.needed) {
+            if (mb.byteLength > this.needed) {
+                this.buffers.buffersArray.push(mb.slice(this.needed));
+                this.size = mb.byteLength - this.needed;
             } else {
-                // Push the complete buffer if conditions are not met for immediate processing
-                this.buffers.push(mb);
-                this.size += mb.byteLength;
+                this.size = 0;
             }
-
-
-        /* Optimization - All it takes is one combine  */
-        while (this.size >= this.needed) {
-            let count = 0;
-            const frame = new ArrayBuffer(this.needed);
-            const view = new Uint8Array(frame);
-
-            while (count < frame.byteLength && this.buffers.length > 0) {
-                const buf = this.buffers.shift();
-                const uint8 = new Uint8Array(buf);
-                const step = frame.byteLength - count;
-
-                if (uint8.length <= step) {
-                    view.set(uint8, count);
-                    count += uint8.length;
-                    this.size -= uint8.length;
-                } else {
-                    view.set(uint8.slice(0, step), count);
-                    this.buffers.unshift(uint8.slice(step));
-                    count += step;
-                    this.size -= step;
-                }
-            }
-
-            this.callback.call(this.sc, frame, this.saved_msg_header || undefined);
+            const toProcess = mb.slice(0, this.needed);
+            this.callback.call(this.sc, toProcess, this.saved_msg_header);
+        } else {
+            this.buffers.buffersArray.push(mb);
+            this.size += mb.byteLength;
         }
 
+        while (this.size >= this.needed) {
+            let bytesToRead = this.needed;
+            const frame = new Uint8Array(this.needed);
+            let offset = 0;
+
+            while (bytesToRead > 0 && this.buffers.currentIndex < this.buffers.buffersArray.length) {
+                const currentBuffer = this.buffers.buffersArray[this.buffers.currentIndex];
+                const currentView = new Uint8Array(currentBuffer);
+                const bytesAvailable = currentView.length - this.buffers.currentOffset;
+                const bytesToCopy = Math.min(bytesAvailable, bytesToRead);
+
+                frame.set(currentView.subarray(this.buffers.currentOffset, this.buffers.currentOffset + bytesToCopy), offset);
+
+                this.buffers.currentOffset += bytesToCopy;
+                offset += bytesToCopy;
+                bytesToRead -= bytesToCopy;
+                this.size -= bytesToCopy;
+
+                if (this.buffers.currentOffset >= currentView.length) {
+                    // Move to next buffer
+                    this.buffers.currentIndex++;
+                    this.buffers.currentOffset = 0;
+                }
+            }
+
+            this.callback.call(this.sc, frame.buffer, this.saved_msg_header || undefined);
+        }
+
+        // Cleanup buffers if all processed
+        if (this.buffers.currentIndex >= this.buffers.buffersArray.length) {
+            this.buffers.buffersArray = [];
+            this.buffers.currentIndex = 0;
+            this.buffers.currentOffset = 0;
+        }
     },
 
-    request: function(n)
-    {
+    request: function(n) {
         this.needed = n;
     },
 
-    save_header: function(h)
-    {
+    save_header: function(h) {
         this.saved_msg_header = h;
     },
 
-    clear_header: function()
-    {
+    clear_header: function() {
         this.saved_msg_header = undefined;
     },
 }
 
-function wire_blob_catcher(e)
-{
+function wire_blob_catcher(e) {
     DEBUG > 1 && console.log(">> WebSockets.onmessage");
-    DEBUG > 1 && console.log("id " + this.wire_reader.sc.connection_id +"; type " + this.wire_reader.sc.type);
+    DEBUG > 1 && console.log("id " + this.wire_reader.sc.connection_id + "; type " + this.wire_reader.sc.type);
     SpiceWireReader.prototype.inbound.call(this.wire_reader, e.data);
 }
 
