@@ -347,12 +347,12 @@ function check_and_update_modifiers(e, code, sc) {
     }
 
     const keyMappings = {
-        [KeyNames.KEY_ShiftL]: () => Shift_state = true,
+        [KeyNames.KEY_ShiftL | KeyNames.KEY_ShiftR]: () => Shift_state = true,
         [KeyNames.KEY_Alt]: () => Alt_state = true,
         [KeyNames.KEY_LCtrl]: () => Ctrl_state = true,
         [KeyNames.KEY_CapsLock]: () => CapsLock_state = true,
         0xE0B5: () => Meta_state = true,
-        [(0x80 | KeyNames.KEY_ShiftL)]: () => Shift_state = false,
+        [(0x80 | KeyNames.KEY_ShiftL | KeyNames.KEY_ShiftR)]: () => Shift_state = false,
         [(0x80 | KeyNames.KEY_Alt)]: () => Alt_state = false,
         [(0x80 | KeyNames.KEY_LCtrl)]: () => Ctrl_state = false,
         [(0x80 | KeyNames.KEY_CapsLock)]: () => CapsLock_state = false,
@@ -363,7 +363,7 @@ function check_and_update_modifiers(e, code, sc) {
 
     if (sc && sc.inputs && sc.inputs.state === "ready") {
         const modifierStates = [
-            { state: Shift_state, key: e.shiftKey, name: "Shift", code: KeyNames.KEY_ShiftL },
+            { state: Shift_state, key: e.shiftKey, name: "Shift", code: KeyNames.KEY_ShiftL | KeyNames.KEY_ShiftR },
             { state: Alt_state, key: e.altKey, name: "Alt", code: KeyNames.KEY_Alt },
             { state: Ctrl_state, key: e.ctrlKey, name: "Ctrl", code: KeyNames.KEY_LCtrl },
             { state: CapsLock_state, key: e.capsLockKey, name: "CapsLock", code: KeyNames.KEY_CapsLock },
