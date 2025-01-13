@@ -255,10 +255,7 @@ function get_scancode(keyCode, code) {
         return scanmap;
     }
 
-    const userAgent = navigator.userAgent;
-    const isFirefox = userAgent.includes("Firefox");
-
-    return isFirefox ? firefox_scanmap[keyCode] : DOM_scanmap[keyCode];
+    return firefox_scanmap[keyCode];
 }
 
 function toScanCode(keyCode, code, alertOnUndefined = false) {
