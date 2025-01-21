@@ -344,41 +344,37 @@ function check_and_update_modifiers(e, code, sc) {
         Ctrl_state = e.ctrlKey;
         Alt_state = e.altKey;
         Meta_state = e.metaKey;
+        CapsLock_state = e.getModifierState("CapsLock");
     }
 
-    const keyMappings = {
-        [KeyNames.KEY_ShiftL | KeyNames.KEY_ShiftR]: () => Shift_state = true,
-        [KeyNames.KEY_Alt]: () => Alt_state = true,
-        [KeyNames.KEY_LCtrl]: () => Ctrl_state = true,
-        [KeyNames.KEY_CapsLock]: () => CapsLock_state = true,
-        0xE0B5: () => Meta_state = true,
-        [(0x80 | KeyNames.KEY_ShiftL | KeyNames.KEY_ShiftR)]: () => Shift_state = false,
-        [(0x80 | KeyNames.KEY_Alt)]: () => Alt_state = false,
-        [(0x80 | KeyNames.KEY_LCtrl)]: () => Ctrl_state = false,
-        [(0x80 | KeyNames.KEY_CapsLock)]: () => CapsLock_state = false,
-        [(0x80 | 0xE0B5)]: () => Meta_state = false
-    };
+    const isRelease = code & 0x80;
+    const keyCode = code & ~0x80;
 
-    if (keyMappings[code]) keyMappings[code]();
+    if ([KeyNames.KEY_ShiftL, KeyNames.KEY_ShiftR].includes(keyCode)) Shift_state = !isRelease;
+    else if (keyCode === KeyNames.KEY_Alt) Alt_state = !isRelease;
+    else if (keyCode === KeyNames.KEY_LCtrl) Ctrl_state = !isRelease;
+    else if (keyCode === 0xE0B5) Meta_state = !isRelease;
+    else if (keyCode === KeyNames.KEY_CapsLock && !isRelease) CapsLock_state = !CapsLock_state;
 
-    if (sc && sc.inputs && sc.inputs.state === "ready") {
-        const modifierStates = [
-            { state: Shift_state, key: e.shiftKey, name: "Shift", code: KeyNames.KEY_ShiftL | KeyNames.KEY_ShiftR },
-            { state: Alt_state, key: e.altKey, name: "Alt", code: KeyNames.KEY_Alt },
-            { state: Ctrl_state, key: e.ctrlKey, name: "Ctrl", code: KeyNames.KEY_LCtrl },
-            { state: CapsLock_state, key: e.capsLockKey, name: "CapsLock", code: KeyNames.KEY_CapsLock },
-            { state: Meta_state, key: e.metaKey, name: "Meta", code: 0xE0B5 }
-        ];
-
-        modifierStates.forEach(modifier => {
-            if (modifier.state !== modifier.key) {
-                update_modifier(modifier.key, modifier.code, sc);
-                modifier.state = modifier.key;
+    if (sc?.inputs?.state === "ready") {
+        const syncModifier = (state, key, eState) => {
+            if (state !== eState) {
+                update_modifier(eState, key, sc);
+                return eState;
             }
-        });
+            return state;
+        };
+
+        Shift_state = syncModifier(Shift_state, KeyNames.KEY_ShiftL, e.shiftKey);
+        Alt_state = syncModifier(Alt_state, KeyNames.KEY_Alt, e.altKey);
+        Ctrl_state = syncModifier(Ctrl_state, KeyNames.KEY_LCtrl, e.ctrlKey);
+        Meta_state = syncModifier(Meta_state, 0xE0B5, e.metaKey);
+
+        if (keyCode !== KeyNames.KEY_CapsLock) {
+            CapsLock_state = syncModifier(CapsLock_state, KeyNames.KEY_CapsLock, e.getModifierState("CapsLock"));
+        }
     }
 }
-
 
 export {
   SpiceInputsConn,
