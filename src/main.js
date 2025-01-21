@@ -382,34 +382,35 @@ SpiceMainConn.prototype.file_xfer_start = function(file)
     this.send_agent_message(Constants.VD_AGENT_FILE_XFER_START, xfer_start);
 }
 
-SpiceMainConn.prototype.handle_file_xfer_status = function(file_xfer_status)
-{
+SpiceMainConn.prototype.handle_file_xfer_status = function(file_xfer_status) {
     var xfer_error, xfer_task;
-    if (!this.file_xfer_tasks[file_xfer_status.id])
-    {
+    if (!this.file_xfer_tasks[file_xfer_status.id]) {
         return;
     }
     xfer_task = this.file_xfer_tasks[file_xfer_status.id];
-    switch (file_xfer_status.result)
-    {
+    switch (file_xfer_status.result) {
         case Constants.VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA:
             this.file_xfer_read(xfer_task);
             return;
         case Constants.VD_AGENT_FILE_XFER_STATUS_CANCELLED:
-            xfer_error = "transfer is cancelled by spice agent";
+            xfer_error = "Transfer cancelled";
+            xfer_task.show_message(xfer_error, true);
             break;
         case Constants.VD_AGENT_FILE_XFER_STATUS_ERROR:
-            xfer_error = "some errors occurred in the spice agent";
+            xfer_error = "Transfer error";
+            xfer_task.show_message(xfer_error, true);
             break;
         case Constants.VD_AGENT_FILE_XFER_STATUS_SUCCESS:
+            xfer_task.show_message("Transfer completed successfully", false);
             break;
         default:
-            xfer_error = "unhandled status type: " + file_xfer_status.result;
+            xfer_error = "Unknown error: " + file_xfer_status.result;
+            xfer_task.show_message(xfer_error, true);
             break;
     }
 
-    this.file_xfer_completed(xfer_task, xfer_error)
-}
+    this.file_xfer_completed(xfer_task, xfer_error);
+};
 
 SpiceMainConn.prototype.file_xfer_read = function(file_xfer_task, start_byte)
 {
@@ -459,17 +460,16 @@ SpiceMainConn.prototype.file_xfer_read = function(file_xfer_task, start_byte)
     reader.readAsArrayBuffer(slice);
 }
 
-SpiceMainConn.prototype.file_xfer_completed = function(file_xfer_task, error)
-{
-    if (error)
+SpiceMainConn.prototype.file_xfer_completed = function(file_xfer_task, error) {
+    if (error) {
         this.log_err(error);
-    else
-        this.log_info("transfer of '" + file_xfer_task.file.name +"' was successful");
-
-    file_xfer_task.remove_progressbar();
-
+    } else {
+        this.log_info("Файл '" + file_xfer_task.file.name + "' успешно передан");
+        // Удаление прогресс-бара через 3 секунды
+        setTimeout(() => file_xfer_task.remove_progressbar(), 3000);
+    }
     delete this.file_xfer_tasks[file_xfer_task.id];
-}
+};
 
 SpiceMainConn.prototype.connect_agent = function()
 {

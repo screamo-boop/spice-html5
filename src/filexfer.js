@@ -61,6 +61,33 @@ SpiceFileXferTask.prototype.create_progressbar = function()
     document.body.appendChild(this.progressbar_container);
 }
 
+SpiceFileXferTask.prototype.show_message = function(message, is_error) {
+    while (this.progressbar_container.firstChild) {
+        this.progressbar_container.removeChild(this.progressbar_container.firstChild);
+    }
+
+    const msgDiv = document.createElement("div");
+    const okButton = document.createElement("button");
+    okButton.textContent = 'OK';
+    okButton.style.float = 'right';
+    okButton.onclick = () => this.remove_progressbar();
+
+    this.progressbar_container.style.background = is_error ? '#fee' : '#dfd';
+    msgDiv.style.color = is_error ? '#d00' : '#080';
+    msgDiv.style.padding = '8px';
+    msgDiv.style.marginRight = '60px';
+    msgDiv.innerHTML = `<b>${is_error ? '❌ Error:' : '✅ Success:'}</b> ${message}`;
+
+    this.progressbar_container.appendChild(msgDiv);
+    this.progressbar_container.appendChild(okButton);
+};
+
+SpiceFileXferTask.prototype.remove_progressbar = function() {
+    if (this.progressbar_container && this.progressbar_container.parentNode) {
+        this.progressbar_container.parentNode.removeChild(this.progressbar_container);
+    }
+};
+
 SpiceFileXferTask.prototype.update_progressbar = function(value)
 {
     this.progressbar.setAttribute('value', value);
