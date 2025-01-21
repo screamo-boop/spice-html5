@@ -31,60 +31,52 @@ import { SpiceQuic } from './quic.js';
 function SpiceChannelId()
 {
 }
-SpiceChannelId.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.type = dv.getUint8(at, true); at ++;
-        this.id = dv.getUint8(at, true); at ++;
+SpiceChannelId.prototype = {
+    from_dv: function(dv, at) {
+        this.type = dv.getUint8(at++, true);
+        this.id = dv.getUint8(at++, true);
         return at;
     },
-}
+};
 
 function SpiceRect()
 {
 }
 
-SpiceRect.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.top = dv.getUint32(at, true); at += 4;
-        this.left = dv.getUint32(at, true); at += 4;
-        this.bottom = dv.getUint32(at, true); at += 4;
-        this.right = dv.getUint32(at, true); at += 4;
-        return at;
+SpiceRect.prototype = {
+    from_dv: function(dv, at) {
+        this.top = dv.getUint32(at, true);
+        this.left = dv.getUint32(at += 4, true);
+        this.bottom = dv.getUint32(at += 4, true);
+        this.right = dv.getUint32(at += 4, true);
+        return at + 4;
     },
-    is_same_size : function(r)
-    {
-        if ((this.bottom - this.top) == (r.bottom - r.top) &&
-            (this.right - this.left) == (r.right - r.left) )
-            return true;
-
-        return false;
+    is_same_size: function(r) {
+        return (
+            this.bottom - this.top === r.bottom - r.top &&
+            this.right - this.left === r.right - r.left
+        );
     },
-}
+};
 
 function SpiceClipRects()
 {
 }
 
-SpiceClipRects.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        var i;
-        this.num_rects = dv.getUint32(at, true); at += 4;
-        if (this.num_rects > 0)
-            this.rects = [];
-        for (i = 0; i < this.num_rects; i++)
-        {
-            this.rects[i] = new SpiceRect();
-            at = this.rects[i].from_dv(dv, at, mb);
+SpiceClipRects.prototype = {
+    from_dv: function(dv, at, mb) {
+        this.num_rects = dv.getUint32(at, true);
+        at += 4;
+        
+        this.rects = new Array(this.num_rects);
+        for (let i = 0; i < this.num_rects; i++) {
+            const rect = new SpiceRect();
+            at = rect.from_dv(dv, at, mb);
+            this.rects[i] = rect;
         }
         return at;
     },
-}
+};
 
 function SpiceClip()
 {
@@ -108,38 +100,29 @@ function SpiceImageDescriptor()
 {
 }
 
-SpiceImageDescriptor.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.id = dv.getUint64(at, true); at += 8;
-        this.type  = dv.getUint8(at, true); at ++;
-        this.flags = dv.getUint8(at, true); at ++;
-        this.width = dv.getUint32(at, true); at += 4;
-        this.height= dv.getUint32(at, true); at += 4;
-        return at;
+SpiceImageDescriptor.prototype = {
+    from_dv: function(dv, at, mb) {
+        this.id = dv.getUint64(at, true); 
+        this.type = dv.getUint8(at += 8, true); 
+        this.flags = dv.getUint8(++at, true); 
+        this.width = dv.getUint32(++at, true); 
+        this.height = dv.getUint32((at += 4), true); 
+        return at + 4;
     },
-}
+};
 
 function SpicePalette()
 {
 }
 
-SpicePalette.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        var i;
-        this.unique = dv.getUint64(at, true); at += 8;
-        this.num_ents = dv.getUint16(at, true); at += 2;
-        this.ents = [];
-        for (i = 0; i < this.num_ents; i++)
-        {
-            this.ents[i] = dv.getUint32(at, true); at += 4;
-        }
-        return at;
+SpicePalette.prototype = {
+    from_dv: function(dv, at, mb) {
+        this.unique = dv.getUint64(at, true);
+        this.num_ents = dv.getUint16(at + 8, true);
+        this.ents = new Uint32Array(dv.buffer, at + 10, this.num_ents);
+        return at + 10 + this.num_ents * 4;
     },
-}
+};
 
 function SpiceBitmap()
 {
@@ -274,87 +257,64 @@ function SpiceQMask()
 {
 }
 
-SpiceQMask.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.flags  = dv.getUint8(at, true); at++;
-        this.pos = new SpicePoint;
-        at = this.pos.from_dv(dv, at, mb);
-        var offset = dv.getUint32(at, true); at += 4;
-        if (offset == 0)
-        {
-            this.bitmap = null;
-            return at;
-        }
-
-        this.bitmap = new SpiceImage;
-        return this.bitmap.from_dv(dv, offset, mb);
+SpiceQMask.prototype = {
+    from_dv: function(dv, at, mb) {
+        this.flags = dv.getUint8(at++, true);
+        at = (this.pos = new SpicePoint()).from_dv(dv, at, mb);
+        
+        const offset = dv.getUint32(at, true);
+        return offset ? 
+            (this.bitmap = new SpiceImage()).from_dv(dv, offset, mb) : 
+            (this.bitmap = null, at + 4);
     },
-}
+};
 
 
 function SpicePattern()
 {
 }
 
-SpicePattern.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        var offset = dv.getUint32(at, true); at += 4;
-        if (offset == 0)
-        {
-            this.pat = null;
-        }
-        else
-        {
-            this.pat = new SpiceImage;
-            this.pat.from_dv(dv, offset, mb);
-        }
-
-        this.pos = new SpicePoint;
-        return this.pos.from_dv(dv, at, mb);
+SpicePattern.prototype = {
+    from_dv: function(dv, at, mb) {
+        const offset = dv.getUint32(at, true);
+        this.pat = offset ? new SpiceImage().from_dv(dv, offset, mb) : null;
+        return new SpicePoint().from_dv(dv, at + 4, mb);
     }
-}
+};
 
 function SpiceBrush()
 {
 }
 
-SpiceBrush.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.type = dv.getUint8(at, true); at ++;
-        if (this.type == Constants.SPICE_BRUSH_TYPE_SOLID)
-        {
-            this.color = dv.getUint32(at, true); at += 4;
-        }
-        else if (this.type == Constants.SPICE_BRUSH_TYPE_PATTERN)
-        {
-            this.pattern = new SpicePattern;
-            at = this.pattern.from_dv(dv, at, mb);
+SpiceBrush.prototype = {
+    from_dv: function(dv, at, mb) {
+        this.type = dv.getUint8(at++, true);
+        switch (this.type) {
+            case Constants.SPICE_BRUSH_TYPE_SOLID:
+                this.color = dv.getUint32(at, true);
+                at += 4;
+                break;
+            case Constants.SPICE_BRUSH_TYPE_PATTERN:
+                at = (this.pattern = new SpicePattern()).from_dv(dv, at, mb);
+                break;
         }
         return at;
     },
-}
+};
 
 function SpiceFill()
 {
 }
 
-SpiceFill.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.brush = new SpiceBrush;
+SpiceFill.prototype = {
+    from_dv: function(dv, at, mb) {
+        this.brush = new SpiceBrush();
         at = this.brush.from_dv(dv, at, mb);
-        this.rop_descriptor = dv.getUint16(at, true); at += 2;
-        this.mask = new SpiceQMask;
-        return this.mask.from_dv(dv, at, mb);
+        this.rop_descriptor = dv.getUint16(at, true);
+        this.mask = new SpiceQMask();
+        return this.mask.from_dv(dv, at + 2, mb);
     },
-}
+};
 
 
 function SpiceCopy()
@@ -388,86 +348,77 @@ function SpicePoint16()
 {
 }
 
-SpicePoint16.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.x = dv.getUint16(at, true); at += 2;
-        this.y = dv.getUint16(at, true); at += 2;
-        return at;
+SpicePoint16.prototype = {
+    from_dv: function(dv, at) {
+        this.x = dv.getUint16(at, true);
+        this.y = dv.getUint16(at + 2, true);
+        return at + 4;
     },
-}
+};
 
 function SpicePoint()
 {
 }
 
-SpicePoint.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.x = dv.getUint32(at, true); at += 4;
-        this.y = dv.getUint32(at, true); at += 4;
-        return at;
+SpicePoint.prototype = {
+    from_dv: function(dv, at) {
+        this.x = dv.getUint32(at, true);
+        this.y = dv.getUint32(at + 4, true);
+        return at + 8;
     },
-}
+};
 
 function SpiceCursorHeader()
 {
 }
 
-SpiceCursorHeader.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.unique = dv.getUint64(at, true); at += 8;
-        this.type = dv.getUint8(at, true); at ++;
-        this.width = dv.getUint16(at, true); at += 2;
-        this.height = dv.getUint16(at, true); at += 2;
-        this.hot_spot_x = dv.getUint16(at, true); at += 2;
-        this.hot_spot_y = dv.getUint16(at, true); at += 2;
+SpiceCursorHeader.prototype = {
+    from_dv: function(dv, at) {
+        this.unique     = dv.getUint64(at, true);       at += 8;
+        this.type       = dv.getUint8(at++, true);
+        this.width      = dv.getUint16(at, true);       at += 2;
+        this.height     = dv.getUint16(at, true);       at += 2;
+        this.hot_spot_x = dv.getUint16(at, true);       at += 2;
+        this.hot_spot_y = dv.getUint16(at, true);       at += 2;
         return at;
     },
-}
+};
 
 function SpiceCursor()
 {
 }
 
-SpiceCursor.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.flags = dv.getUint16(at, true); at += 2;
-        if (this.flags & Constants.SPICE_CURSOR_FLAGS_NONE)
+SpiceCursor.prototype = {
+    from_dv: function(dv, at) {
+        this.flags = dv.getUint16(at, true); 
+        at += 2;
+
+        if (!(this.flags & Constants.SPICE_CURSOR_FLAGS_NONE)) {
+            this.header = new SpiceCursorHeader();
+            at = this.header.from_dv(dv, at);
+            this.data = dv.buffer.slice(at, at += (dv.buffer.byteLength - at)); 
+        } else {
             this.header = null;
-        else
-        {
-            this.header = new SpiceCursorHeader;
-            at = this.header.from_dv(dv, at, mb);
-            this.data   = mb.slice(at);
-            at += this.data.byteLength;
         }
+
         return at;
     },
-}
+};
 
 function SpiceSurface()
 {
 }
 
-SpiceSurface.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.surface_id = dv.getUint32(at, true); at += 4;
-        this.width = dv.getUint32(at, true); at += 4;
-        this.height = dv.getUint32(at, true); at += 4;
-        this.format = dv.getUint32(at, true); at += 4;
-        this.flags = dv.getUint32(at, true); at += 4;
+SpiceSurface.prototype = {
+    from_dv: function(dv, at) {
+        this.surface_id = dv.getUint32(at, true),      at += 4;
+        this.width      = dv.getUint32(at, true),      at += 4;
+        this.height     = dv.getUint32(at, true),      at += 4;
+        this.format     = dv.getUint32(at, true),      at += 4;
+        this.flags      = dv.getUint32(at, true),      at += 4;
         return at;
     },
-}
+};
 
 /* FIXME - SpiceImage  types lz_plt, jpeg, zlib_glz, and jpeg_alpha are
            completely unimplemented */
