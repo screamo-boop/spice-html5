@@ -181,97 +181,94 @@ function SpiceImage()
 {
 }
 
-SpiceImage.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.descriptor = new SpiceImageDescriptor;
+SpiceImage.prototype = {
+    from_dv: function(dv, at, mb) {
+        this.descriptor = new SpiceImageDescriptor();
         at = this.descriptor.from_dv(dv, at, mb);
 
-        if (this.descriptor.type == Constants.SPICE_IMAGE_TYPE_LZ_RGB)
-        {
-            this.lz_rgb = new Object();
-            this.lz_rgb.length = dv.getUint32(at, true); at += 4;
-            var initial_at = at;
-            this.lz_rgb.magic = "";
-            for (var i = 3; i >= 0; i--)
-                this.lz_rgb.magic += String.fromCharCode(dv.getUint8(at + i));
-            at += 4;
-
-            // NOTE:  The endian change is *correct*
-            this.lz_rgb.version = dv.getUint32(at); at += 4;
-            this.lz_rgb.type = dv.getUint32(at); at += 4;
-            this.lz_rgb.width = dv.getUint32(at); at += 4;
-            this.lz_rgb.height = dv.getUint32(at); at += 4;
-            this.lz_rgb.stride = dv.getUint32(at); at += 4;
-            this.lz_rgb.top_down = dv.getUint32(at); at += 4;
-
-            var header_size = at - initial_at;
-
-            this.lz_rgb.data   = mb.slice(at, this.lz_rgb.length + at - header_size);
-            at += this.lz_rgb.data.byteLength;
-
-        }
-
-        if (this.descriptor.type == Constants.SPICE_IMAGE_TYPE_BITMAP)
-        {
-            this.bitmap = new SpiceBitmap;
+        const type = this.descriptor.type;
+        
+        if (type === Constants.SPICE_IMAGE_TYPE_LZ_RGB) {
+            this._parseLZRGB(dv, at, mb);
+            at = this.lz_rgb.data.byteLength + this.lz_rgb._end;
+        } 
+        else if (type === Constants.SPICE_IMAGE_TYPE_BITMAP) {
+            this.bitmap = new SpiceBitmap();
             at = this.bitmap.from_dv(dv, at, mb);
-        }
-
-        if (this.descriptor.type == Constants.SPICE_IMAGE_TYPE_SURFACE)
-        {
-            this.surface_id = dv.getUint32(at, true); at += 4;
-        }
-
-        if (this.descriptor.type == Constants.SPICE_IMAGE_TYPE_JPEG)
-        {
-            this.jpeg = new Object;
-            this.jpeg.data_size = dv.getUint32(at, true); at += 4;
-            this.jpeg.data = mb.slice(at);
-            at += this.jpeg.data.byteLength;
-        }
-
-        if (this.descriptor.type == Constants.SPICE_IMAGE_TYPE_JPEG_ALPHA)
-        {
-            this.jpeg_alpha = new Object;
-            this.jpeg_alpha.flags = dv.getUint8(at, true); at += 1;
-            this.jpeg_alpha.jpeg_size = dv.getUint32(at, true); at += 4;
-            this.jpeg_alpha.data_size = dv.getUint32(at, true); at += 4;
-            this.jpeg_alpha.data = mb.slice(at, this.jpeg_alpha.jpeg_size + at);
-            at += this.jpeg_alpha.data.byteLength;
-            // Alpha channel is an LZ image
-            this.jpeg_alpha.alpha = new Object();
-            this.jpeg_alpha.alpha.length = this.jpeg_alpha.data_size - this.jpeg_alpha.jpeg_size;
-            var initial_at = at;
-            this.jpeg_alpha.alpha.magic = "";
-            for (var i = 3; i >= 0; i--)
-                this.jpeg_alpha.alpha.magic += String.fromCharCode(dv.getUint8(at + i));
+        } 
+        else if (type === Constants.SPICE_IMAGE_TYPE_SURFACE) {
+            this.surface_id = dv.getUint32(at, true);
             at += 4;
-
-            // NOTE:  The endian change is *correct*
-            this.jpeg_alpha.alpha.version = dv.getUint32(at); at += 4;
-            this.jpeg_alpha.alpha.type = dv.getUint32(at); at += 4;
-            this.jpeg_alpha.alpha.width = dv.getUint32(at); at += 4;
-            this.jpeg_alpha.alpha.height = dv.getUint32(at); at += 4;
-            this.jpeg_alpha.alpha.stride = dv.getUint32(at); at += 4;
-            this.jpeg_alpha.alpha.top_down = dv.getUint32(at); at += 4;
-
-            var header_size = at - initial_at;
-
-            this.jpeg_alpha.alpha.data   = mb.slice(at, this.jpeg_alpha.alpha.length + at - header_size);
-            at += this.jpeg_alpha.alpha.data.byteLength;
-        }
-
-        if (this.descriptor.type == Constants.SPICE_IMAGE_TYPE_QUIC)
-        {
-            this.quic = new SpiceQuic;
+        } 
+        else if (type === Constants.SPICE_IMAGE_TYPE_JPEG) {
+            this._parseJPEG(dv, at, mb);
+            at += this.jpeg.data.byteLength + 4;
+        } 
+        else if (type === Constants.SPICE_IMAGE_TYPE_JPEG_ALPHA) {
+            at = this._parseJPEGAlpha(dv, at, mb);
+        } 
+        else if (type === Constants.SPICE_IMAGE_TYPE_QUIC) {
+            this.quic = new SpiceQuic();
             at = this.quic.from_dv(dv, at, mb);
         }
+
         return at;
     },
-}
 
+    _parseLZHeader(dv, at, target) {
+        const start = at;
+        target.magic = String.fromCharCode(...[3,2,1,0].map(i => dv.getUint8(at + i)));
+        at += 4;
+        
+        const view = new DataView(dv.buffer);
+        target.version = view.getUint32(at, false);  // Big-endian
+        target.type = view.getUint32(at += 4, false);
+        target.width = view.getUint32(at += 4, false);
+        target.height = view.getUint32(at += 4, false);
+        target.stride = view.getUint32(at += 4, false);
+        target.top_down = view.getUint32(at += 4, false);
+        at += 4;
+
+        return { header_size: at - start, new_at: at };
+    },
+
+    _parseLZRGB(dv, at, mb) {
+        this.lz_rgb = { length: dv.getUint32(at, true) };
+        let res = this._parseLZHeader(dv, at += 4, this.lz_rgb);
+        
+        this.lz_rgb.data = mb.slice(res.new_at, this.lz_rgb.length + res.new_at - res.header_size);
+        this.lz_rgb._end = res.new_at + this.lz_rgb.data.byteLength;
+    },
+
+    _parseJPEG(dv, at, mb) {
+        this.jpeg = {
+            data_size: dv.getUint32(at, true),
+            data: mb.slice(at += 4, at + dv.getUint32(at, true))
+        };
+    },
+
+    _parseJPEGAlpha(dv, at, mb) {
+        this.jpeg_alpha = {
+            flags: dv.getUint8(at, true),
+            jpeg_size: dv.getUint32(at += 1, true),
+            data_size: dv.getUint32(at += 4, true),
+        };
+        
+        this.jpeg_alpha.data = mb.slice(at += 4, at + this.jpeg_alpha.jpeg_size);
+        at += this.jpeg_alpha.jpeg_size;
+
+        // Parse alpha channel
+        this.jpeg_alpha.alpha = { length: this.jpeg_alpha.data_size - this.jpeg_alpha.jpeg_size };
+        let res = this._parseLZHeader(dv, at, this.jpeg_alpha.alpha);
+        
+        this.jpeg_alpha.alpha.data = mb.slice(
+            res.new_at, 
+            this.jpeg_alpha.alpha.length + res.new_at - res.header_size
+        );
+        
+        return res.new_at + this.jpeg_alpha.alpha.data.byteLength;
+    },
+};
 
 function SpiceQMask()
 {
