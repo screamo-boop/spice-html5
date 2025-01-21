@@ -145,37 +145,37 @@ function SpiceBitmap()
 {
 }
 
-SpiceBitmap.prototype =
-{
-    from_dv: function(dv, at, mb)
-    {
-        this.format = dv.getUint8(at, true); at++;
-        this.flags  = dv.getUint8(at, true); at++;
+SpiceBitmap.prototype = {
+    from_dv: function(dv, at, mb) {
+        this.format = dv.getUint8(at++, true);
+        this.flags = dv.getUint8(at++, true);
         this.x = dv.getUint32(at, true); at += 4;
         this.y = dv.getUint32(at, true); at += 4;
         this.stride = dv.getUint32(at, true); at += 4;
-        if (this.flags & Constants.SPICE_BITMAP_FLAGS_PAL_FROM_CACHE)
-        {
-            this.palette_id = dv.getUint64(at, true); at += 8;
-        }
-        else
-        {
-            var offset = dv.getUint32(at, true); at += 4;
-            if (offset == 0)
-                this.palette = null;
-            else
-            {
-                this.palette = new SpicePalette;
-                this.palette.from_dv(dv, offset, mb);
+
+        let dataStart = at;
+        if (this.flags & Constants.SPICE_BITMAP_FLAGS_PAL_FROM_CACHE) {
+            this.palette_id = dv.getUint64(at, true);
+            at += 8;
+        } else {
+            const paletteOffset = dv.getUint32(at, true);
+            at += 4;
+            if (paletteOffset) {
+                this.palette = new SpicePalette();
+                this.palette.from_dv(dv, paletteOffset, mb);
+                dataStart = at;
+                const dataEnd = paletteOffset;
+                this.data = mb.slice(dataStart, dataEnd);
+                at += dataEnd - dataStart;
+                return at;
             }
         }
-        // FIXME - should probably constrain this to the offset
-        //          of palette, if non zero
-        this.data   = mb.slice(at);
+
+        this.data = mb.slice(dataStart);
         at += this.data.byteLength;
         return at;
     },
-}
+};
 
 function SpiceImage()
 {
