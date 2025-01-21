@@ -40,18 +40,25 @@ SpiceFileXferTask.prototype.create_progressbar = function()
         _this.remove_progressbar();
     };
 
+    this.progressbar_container.style.position = 'fixed';
+    this.progressbar_container.style.top = '20px';
+    this.progressbar_container.style.right = '20px';
+    this.progressbar_container.style.zIndex = '10000';
+    this.progressbar_container.style.background = 'rgba(255, 255, 255, 0.9)';
+    this.progressbar_container.style.padding = '10px';
+    this.progressbar_container.style.borderRadius = '5px';
+    this.progressbar_container.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+
     this.progressbar.setAttribute('max', this.file.size);
     this.progressbar.setAttribute('value', 0);
-    this.progressbar.style.width = '100%';
-    this.progressbar.style.margin = '4px auto';
-    this.progressbar.style.display = 'inline-block';
-    this.progressbar_container.style.width = '90%';
-    this.progressbar_container.style.margin = 'auto';
-    this.progressbar_container.style.padding = '4px';
+    this.progressbar.style.width = '300px';
+    this.progressbar.style.margin = '4px 0';
+
     this.progressbar_container.textContent = this.file.name;
     this.progressbar_container.appendChild(cancel);
     this.progressbar_container.appendChild(this.progressbar);
-    document.getElementById('spice-xfer-area').appendChild(this.progressbar_container);
+    
+    document.body.appendChild(this.progressbar_container);
 }
 
 SpiceFileXferTask.prototype.update_progressbar = function(value)
