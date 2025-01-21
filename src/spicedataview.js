@@ -25,113 +25,96 @@
 **    We should use DataView if we have it, because it *has* to
 **    be faster than this code
 **--------------------------------------------------------------------------*/
+"use strict";
+
 class SpiceDataView {
     constructor(buffer, byteOffset = 0, byteLength) {
-      this.buffer = buffer;
-      this.byteOffset = byteOffset;
-      this.byteLength = byteLength;
-  
-      this.u8 = new Uint8Array(buffer, byteOffset, byteLength);
-  
-      this.dataView = {
-        getUint16: (offset, littleEndian) => this._getUint16(offset, littleEndian),
-        getUint32: (offset, littleEndian) => this._getUint32(offset, littleEndian),
-        getUint64: (offset, littleEndian) => this._getUint64(offset, littleEndian),
-        setUint16: (offset, value, littleEndian) => this._setUint16(offset, value, littleEndian),
-        setUint32: (offset, value, littleEndian) => this._setUint32(offset, value, littleEndian),
-        setUint64: (offset, value, littleEndian) => this._setUint64(offset, value, littleEndian),
-      };
+        this.buffer = buffer;
+        this.byteOffset = byteOffset;
+        this.byteLength = byteLength ?? buffer.byteLength - byteOffset;
+        this.nativeView = new DataView(buffer, byteOffset, byteLength);
+        this.u8 = new Uint8Array(buffer, byteOffset, byteLength);
     }
-  
-    _getUint16(offset, littleEndian) {
-      return littleEndian
-        ? this.u8[offset] | (this.u8[offset + 1] << 8)
-        : (this.u8[offset + 1] << 8) | this.u8[offset];
+    _useNative(method, offset, littleEndian, bytes) {
+        if (offset + bytes <= this.byteLength) {
+            return this.nativeView[method](offset, littleEndian);
+        }
+        return null;
     }
-  
-    _getUint32(offset, littleEndian) {
-      return littleEndian
-        ? this.u8[offset] | (this.u8[offset + 1] << 8) | (this.u8[offset + 2] << 16) | (this.u8[offset + 3] << 24)
-        : (this.u8[offset + 3] << 24) | (this.u8[offset + 2] << 16) | (this.u8[offset + 1] << 8) | this.u8[offset];
-    }
-  
-    _getUint64(offset, littleEndian) {
-      const low = this._getUint32(offset, littleEndian);
-      const high = this._getUint32(offset + 4, littleEndian);
-      return littleEndian ? BigInt(low) + (BigInt(high) << 32n) : (BigInt(low) << 32n) + BigInt(high);
-    }
-  
-    _setUint16(offset, value, littleEndian) {
-      if (littleEndian) {
-        this.u8[offset] = value & 0xFF;
-        this.u8[offset + 1] = (value >> 8) & 0xFF;
-      } else {
-        this.u8[offset + 1] = value & 0xFF;
-        this.u8[offset] = (value >> 8) & 0xFF;
-      }
-    }
-  
-    _setUint32(offset, value, littleEndian) {
-      if (littleEndian) {
-        this.u8[offset] = value & 0xFF;
-        this.u8[offset + 1] = (value >> 8) & 0xFF;
-        this.u8[offset + 2] = (value >> 16) & 0xFF;
-        this.u8[offset + 3] = (value >> 24) & 0xFF;
-      } else {
-        this.u8[offset + 3] = value & 0xFF;
-        this.u8[offset + 2] = (value >> 8) & 0xFF;
-        this.u8[offset + 1] = (value >> 16) & 0xFF;
-        this.u8[offset] = (value >> 24) & 0xFF;
-      }
-    }
-  
-    _setUint64(offset, value, littleEndian) {
-      const high = Number((BigInt(value) >> 32n) & 0xFFFFFFFFn);
-      const low = Number(BigInt(value) & 0xFFFFFFFFn);
-      if (littleEndian) {
-        this._setUint32(offset, low, littleEndian);
-        this._setUint32(offset + 4, high, littleEndian);
-      } else {
-        this._setUint32(offset, high, littleEndian);
-        this._setUint32(offset + 4, low, littleEndian);
-      }
-    }
-  
+
     getUint8(byteOffset) {
-      return this.u8[byteOffset];
+        return this.u8[byteOffset];
     }
-  
+
     getUint16(byteOffset, littleEndian = false) {
-      return this.dataView.getUint16(byteOffset, littleEndian);
+        return this._useNative('getUint16', byteOffset, littleEndian, 2) ??
+            (littleEndian ?
+                this.u8[byteOffset] | (this.u8[byteOffset + 1] << 8) :
+                (this.u8[byteOffset] << 8) | this.u8[byteOffset + 1]);
     }
-  
+
     getUint32(byteOffset, littleEndian = false) {
-      return this.dataView.getUint32(byteOffset, littleEndian);
+        return this._useNative('getUint32', byteOffset, littleEndian, 4) ??
+            (littleEndian ?
+                this.u8[byteOffset] | (this.u8[byteOffset + 1] << 8) |
+                (this.u8[byteOffset + 2] << 16) | (this.u8[byteOffset + 3] << 24) :
+                (this.u8[byteOffset] << 24) | (this.u8[byteOffset + 1] << 16) |
+                (this.u8[byteOffset + 2] << 8) | this.u8[byteOffset + 3]);
     }
-  
+
     getUint64(byteOffset, littleEndian = false) {
-      return this.dataView.getUint64(byteOffset, littleEndian);
+        const low = this.getUint32(byteOffset + (littleEndian ? 0 : 4), littleEndian);
+        const high = this.getUint32(byteOffset + (littleEndian ? 4 : 0), littleEndian);
+        return (BigInt(high) << 32n) | BigInt(low);
     }
-  
+
     setUint8(byteOffset, value) {
-      this.u8[byteOffset] = value;
+        this.u8[byteOffset] = value;
     }
-  
+
     setUint16(byteOffset, value, littleEndian = false) {
-      this.dataView.setUint16(byteOffset, value, littleEndian);
+        try {
+            this.nativeView.setUint16(byteOffset, value, littleEndian);
+        } catch {
+            if (littleEndian) {
+                this.u8[byteOffset] = value & 0xFF;
+                this.u8[byteOffset + 1] = (value >> 8) & 0xFF;
+            } else {
+                this.u8[byteOffset + 1] = value & 0xFF;
+                this.u8[byteOffset] = (value >> 8) & 0xFF;
+            }
+        }
     }
-  
+
     setUint32(byteOffset, value, littleEndian = false) {
-      this.dataView.setUint32(byteOffset, value, littleEndian);
+        try {
+            this.nativeView.setUint32(byteOffset, value, littleEndian);
+        } catch {
+            if (littleEndian) {
+                for (let i = 0; i < 4; i++) {
+                    this.u8[byteOffset + i] = (value >> (i * 8)) & 0xFF;
+                }
+            } else {
+                for (let i = 0; i < 4; i++) {
+                    this.u8[byteOffset + 3 - i] = (value >> (i * 8)) & 0xFF;
+                }
+            }
+        }
     }
-  
+
     setUint64(byteOffset, value, littleEndian = false) {
-      this.dataView.setUint64(byteOffset, value, littleEndian);
-    }
+      const bigValue = BigInt(value);
+      const high = bigValue >> 32n;
+      const low = bigValue & 0xFFFFFFFFn;
+      
+      if (littleEndian) {
+          this.setUint32(byteOffset, Number(low), true);
+          this.setUint32(byteOffset + 4, Number(high), true);
+      } else {
+          this.setUint32(byteOffset, Number(high), false);
+          this.setUint32(byteOffset + 4, Number(low), false);
+      }
   }
+}
 
-
-
-export {
-  SpiceDataView,
-};
+export { SpiceDataView };
