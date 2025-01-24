@@ -95,10 +95,10 @@ class SpiceCursorConn extends SpiceConn {
         this.set_cursor(cursor_set.cursor);
         return true;
     }
-// FIXME: Temporary disabled cursor hide for oldest operating systems
+
     hideCursor() {
         DEBUG > 1 && console.log("SpiceMsgCursorHide");
-        this.setCursorStyle("auto");
+        this.setCursorStyle("none");
         return true;
     }
 
