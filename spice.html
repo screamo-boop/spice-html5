@@ -23,202 +23,208 @@
 
 -->
 
-<!doctype html>
+
+<!DOCTYPE html>
 <html>
-    <head>
+<head>
+    <title>Spice Javascript Client</title>
+    <link rel="stylesheet" type="text/css" href="spice.css" />
 
-        <title>Spice Javascript client</title>
-        <link rel="stylesheet" type="text/css" href="spice.css" />
+    <script type="module">
+        window._spice_has_module_support = true;
+    </script>
+    <script>
+        window.addEventListener("load", function() {
+            if (window._spice_has_module_support) return;
+            var loader = document.createElement("script");
+            loader.src = "thirdparty/browser-es-module-loader/dist/browser-es-module-loader.js";
+            document.head.appendChild(loader);
+        });
+    </script>
 
-        <!-- ES2015/ES6 modules polyfill -->
-        <script type="module">
-            window._spice_has_module_support = true;
-        </script>
-        <script>
-            window.addEventListener("load", function() {
-                if (window._spice_has_module_support) return;
-                var loader = document.createElement("script");
-                loader.src = "thirdparty/browser-es-module-loader/dist/" +
-                    "browser-es-module-loader.js";
-                document.head.appendChild(loader);
-            });
-        </script>
+    <script type="module" crossorigin="anonymous">
+        import * as SpiceHtml5 from './src/main.js';
 
-        <script type="module" crossorigin="anonymous">
-            import * as SpiceHtml5 from './src/main.js';
-        
-            let sc = null;
-        
-            // Cache DOM elements to reduce repeated lookups
-            const hostInput = document.getElementById("host");
-            const portInput = document.getElementById("port");
-            const passwordInput = document.getElementById("password");
-            const connectButton = document.getElementById('connectButton');
-            const spiceArea = document.getElementById('spice-area');
-            const sendCtrlAltDelButton = document.getElementById('sendCtrlAltDel');
-            const clipboardButton = document.getElementById('clipboard');
-            const sendCtrlAltFDropdown = document.getElementById('sendCtrlAltFDropdown');
-        
-            function spice_error(e) {
+        let sc = null;
+
+        const hostInput = document.getElementById("host");
+        const portInput = document.getElementById("port");
+        const passwordInput = document.getElementById("password");
+        const connectButton = document.getElementById('connectButton');
+        const spiceArea = document.getElementById('spice-area');
+        const sendCtrlAltDelButton = document.getElementById('sendCtrlAltDel');
+        const clipboardButton = document.getElementById('clipboard');
+        const sendCtrlAltFDropdown = document.getElementById('sendCtrlAltFDropdown');
+        const schemeSelect = document.getElementById("scheme");
+
+        function spice_error(e) {
+            console.error("Spice Error:", e);
+            disconnect();
+        }
+
+        function connect() {
+            const scheme = schemeSelect.value + "://";
+            const host = hostInput.value;
+            const portValue = portInput.value;
+            const password = passwordInput.value;
+
+            if (!host || !portValue) {
+                console.log("Host and port must be specified");
+                return;
+            }
+
+            if (!portValue.match(/^\d+$/)) {
+                console.log("Port must be a number");
+                return;
+            }
+            const port = portValue;
+
+            if (sc) {
+                sc.stop();
+                sc = null;
+            }
+
+            const uri = scheme + host + ':' + port;
+
+            connectButton.textContent = "Stop Connection";
+            connectButton.onclick = disconnect;
+
+            try {
+                sc = new SpiceHtml5.SpiceMainConn({
+                    uri: uri,
+                    screen_id: "spice-screen",
+                    dump_id: "debug-div",
+                    message_id: "message-div",
+                    password: password,
+                    onerror: spice_error,
+                    onagent: agent_connected
+                });
+            } catch (e) {
+                alert("Connection Error: " + e.toString());
                 disconnect();
             }
-        
-            function connect() {
-                const scheme = "ws://";
-                const host = hostInput.value;
-                const port = portInput.value;
-                const password = passwordInput.value;
-        
-                if (!host || !port) {
-                    console.log("Must set host and port");
-                    return;
-                }
-        
-                if (sc) {
-                    sc.stop();
-                    sc = null;
-                }
-        
-                const uri = `${scheme}${host}:${port}`;
-                connectButton.textContent = "Stop Connection";
-                connectButton.onclick = disconnect;
-        
-                try {
-                    sc = new SpiceHtml5.SpiceMainConn({
-                        uri: uri,
-                        screen_id: "spice-screen",
-                        dump_id: "debug-div",
-                        message_id: "message-div",
-                        password: password,
-                        onerror: spice_error,
-                        onagent: agent_connected
-                    });
-                } catch (e) {
-                    alert(e.toString());
-                    disconnect();
-                }
+        }
+
+        function disconnect() {
+            console.log(">> Disconnecting");
+            if (sc) {
+                sc.stop();
+                sc = null;
+                window.removeEventListener('resize', SpiceHtml5.handle_resize);
             }
-        
-            function disconnect() {
-                console.log(">> disconnect");
-                if (sc) {
-                    sc.stop();
-                    sc = null; // Clear reference for garbage collection
-                }
-        
-                connectButton.textContent = "Start Connection";
-                connectButton.onclick = connect;
-        
-                if (window.File && window.FileReader && window.FileList && window.Blob) {
-                    const spiceXferArea = document.getElementById('spice-xfer-area');
-                    if (spiceXferArea) {
-                        spiceArea.removeChild(spiceXferArea);
-                    }
-                    spiceArea.removeEventListener('dragover', SpiceHtml5.handle_file_dragover, false);
-                    spiceArea.removeEventListener('drop', SpiceHtml5.handle_file_drop, false);
-                }
-                console.log("<< disconnect");
-            }
-        
-            function agent_connected() {
-                window.addEventListener('resize', SpiceHtml5.handle_resize);
-                window.spice_connection = sc;
-                SpiceHtml5.resize_helper(sc);
-        
-                if (window.File && window.FileReader && window.FileList && window.Blob) {
-                    const spiceXferArea = document.createElement("div");
-                    spiceXferArea.id = 'spice-xfer-area';
-                    spiceArea.appendChild(spiceXferArea);
-                    spiceArea.addEventListener('dragover', SpiceHtml5.handle_file_dragover, false);
-                    spiceArea.addEventListener('drop', SpiceHtml5.handle_file_drop, false);
-                } else {
-                    console.log("File API is not supported");
-                }
-            }
-        
-            // Set up event listeners using cached elements
+
+            connectButton.textContent = "Start Connection";
             connectButton.onclick = connect;
-            sendCtrlAltDelButton.addEventListener('click', () => { SpiceHtml5.sendCtrlAltDel(sc); });
-            clipboardButton.addEventListener('click', () => { SpiceHtml5.simulateClipboardTyping(sc); });
-            sendCtrlAltFDropdown.addEventListener('change', function() {
-                SpiceHtml5.sendCtrlAltF(sc, this.value);
-                this.selectedIndex = 0;
-            });
-        </script>
-        
 
-    </head>
-
-    <body>
-
-        <div id="login">
-            <button onclick="open_nav()">&#9776; SPICE</button>
-            <p id="hostname">Host Console</p>
-        </div>
-
-        <div id="Sidenav" class="SidenavClosed" style="width: 0;">
-            <p class="closebtn" onclick="close_nav()">&#10006;</p>
-            <label for="host">Host:</label> <input type='text' id='host' value='localhost'> <!-- localhost --><br>
-            <label for="port">Port:</label> <input type='text' id='port' value='5959'><br>
-            <label for="password">Password:</label> <input type='password' id='password' value=''><br>
-            <button id="connectButton">Start Connection</button><br>
-            <button id="sendCtrlAltDel">Send Ctrl-Alt-Delete</button>
-            <button id="debugLogs">Toggle Debug Logs</button>
-            <button id="clipboard">Paste</button>
-            <select id="sendCtrlAltFDropdown" style="display: inline;">
-                <option selected disabled>Send Ctrl+Alt+F</option>
-                <!-- Options for F1 to F12 -->
-                <option value="1">Ctrl+Alt+F1</option>
-                <option value="2">Ctrl+Alt+F2</option>
-                <option value="3">Ctrl+Alt+F3</option>
-                <option value="4">Ctrl+Alt+F4</option>
-                <option value="5">Ctrl+Alt+F5</option>
-                <option value="6">Ctrl+Alt+F6</option>
-                <option value="7">Ctrl+Alt+F7</option>
-                <option value="8">Ctrl+Alt+F8</option>
-                <option value="9">Ctrl+Alt+F9</option>
-                <option value="10">Ctrl+Alt+F10</option>
-                <option value="11">Ctrl+Alt+F11</option>
-                <option value="12">Ctrl+Alt+F12</option>
-            </select>
-            <div id="message-div" class="spice-message" style="display: none;"></div>
-
-            <div id="debug-div">
-            <!-- If DUMPXXX is turned on, dumped images will go here -->
-            </div>
-        </div>
-
-        <div id="spice-area">
-            <div id="spice-screen" class="spice-screen"></div>
-        </div>
-
-        <script>
-            function show_debug_Logs() {
-                var content = document.getElementById('message-div')
-                if (content.style.display === 'block') {
-                    content.style.display = 'none';
-                } else {
-                    content.style.display = 'block';
+            if (window.File && window.FileReader && window.FileList && window.Blob) {
+                const spiceXferArea = document.getElementById('spice-xfer-area');
+                if (spiceXferArea) {
+                    spiceArea.removeChild(spiceXferArea);
                 }
+                spiceArea.removeEventListener('dragover', SpiceHtml5.handle_file_dragover, false);
+                spiceArea.removeEventListener('drop', SpiceHtml5.handle_file_drop, false);
             }
+            console.log("<< Disconnection completed");
+        }
 
-            function display_hostname() {
-                var title = new URLSearchParams(window.location.search);
-                name = title.getAll('title');
-                name = name.split('(')[0];
-                document.getElementById('hostname').innerHTML = (name);
+        function agent_connected() {
+            window.addEventListener('resize', SpiceHtml5.handle_resize);
+            window.spice_connection = sc;
+            SpiceHtml5.resize_helper(sc);
+
+            if (window.File && window.FileReader && window.FileList && window.Blob) {
+                const spiceXferArea = document.createElement("div");
+                spiceXferArea.id = 'spice-xfer-area';
+                spiceArea.appendChild(spiceXferArea);
+                spiceArea.addEventListener('dragover', SpiceHtml5.handle_file_dragover, false);
+                spiceArea.addEventListener('drop', SpiceHtml5.handle_file_drop, false);
+            } else {
+                console.log("File API is not supported by the browser");
             }
+        }
 
-            function open_nav() {
-                document.getElementById('Sidenav').className = 'SidenavOpen';
+        connectButton.onclick = connect;
+        sendCtrlAltDelButton.addEventListener('click', () => { SpiceHtml5.sendCtrlAltDel(sc); });
+        clipboardButton.addEventListener('click', () => { SpiceHtml5.simulateClipboardTyping(sc); });
+        sendCtrlAltFDropdown.addEventListener('change', function() {
+            SpiceHtml5.sendCtrlAltF(sc, this.value);
+            this.selectedIndex = 0;
+        });
+    </script>
+</head>
+
+<body>
+    <div id="login">
+        <button onclick="open_nav()">☰ SPICE</button>
+        <p id="hostname">Host Console</p>
+    </div>
+
+    <div id="Sidenav" class="SidenavClosed">
+        <p class="closebtn" onclick="close_nav()">✖</p>
+        <label for="scheme">Scheme:</label>
+        <select id="scheme" name="scheme">
+            <option value="ws">ws</option>
+            <option value="wss" selected>wss</option>
+        </select><br>
+        <label for="host">Host:</label> <input type='text' id='host' value='localhost'><br>
+        <label for="port">Port:</label> <input type='text' id='port' value='5959'><br>
+        <label for="password">Password:</label> <input type='password' id='password' value=''><br>
+        <button id="connectButton">Start Connection</button><br>
+        <button id="sendCtrlAltDel">Send Ctrl-Alt-Delete</button>
+        <button id="debugLogs">Toggle Debug Logs</button>
+        <button id="clipboard">Paste</button>
+        <select id="sendCtrlAltFDropdown" style="display: inline;">
+            <option selected disabled>Send Ctrl+Alt+F</option>
+            <option value="1">Ctrl+Alt+F1</option>
+            <option value="2">Ctrl+Alt+F2</option>
+            <option value="3">Ctrl+Alt+F3</option>
+            <option value="4">Ctrl+Alt+F4</option>
+            <option value="5">Ctrl+Alt+F5</option>
+            <option value="6">Ctrl+Alt+F6</option>
+            <option value="7">Ctrl+Alt+F7</option>
+            <option value="8">Ctrl+Alt+F8</option>
+            <option value="9">Ctrl+Alt+F9</option>
+            <option value="10">Ctrl+Alt+F10</option>
+            <option value="11">Ctrl+Alt+F11</option>
+            <option value="12">Ctrl+Alt+F12</option>
+        </select>
+        <div id="message-div" class="spice-message" style="display: none;"></div>
+        <div id="debug-div"></div>
+    </div>
+
+    <div id="spice-area">
+        <div id="spice-screen" class="spice-screen"></div>
+    </div>
+
+    <script>
+        function show_debug_Logs() {
+            var content = document.getElementById('message-div');
+            if (content.style.display === 'block') {
+                content.style.display = 'none';
+            } else {
+                content.style.display = 'block';
             }
+        }
 
-            function close_nav() {
-                document.getElementById('Sidenav').className = 'SidenavClosed';
+        function display_hostname() {
+            var title = new URLSearchParams(window.location.search).get('title');
+            if (title) {
+                var name = title.split('(')[0];
+                document.getElementById('hostname').innerHTML = name;
             }
+        }
 
-            document.getElementById('debugLogs').addEventListener('click', function() { show_debug_Logs(); });
-            display_hostname()
-        </script>
-    </body>
+        function open_nav() {
+            document.getElementById('Sidenav').className = 'SidenavOpen';
+        }
+
+        function close_nav() {
+            document.getElementById('Sidenav').className = 'SidenavClosed';
+        }
+
+        document.getElementById('debugLogs').addEventListener('click', function() { show_debug_Logs(); });
+
+        display_hostname();
+    </script>
+</body>
 </html>
