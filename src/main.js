@@ -1,4 +1,5 @@
 "use strict";
+
 /*
    Copyright (C) 2012 by Jeremy P. White <jwhite@codeweavers.com>
 
@@ -18,6 +19,7 @@
    along with spice-html5.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+
 import * as Messages from './spicemsg.js';
 import { Constants } from './enums.js';
 import { SpiceCursorConn } from './cursor.js';
@@ -31,491 +33,336 @@ import { SpicePortConn } from './port.js';
 import { handle_file_dragover, handle_file_drop } from './filexfer.js';
 import { resize_helper, handle_resize } from './resize.js';
 
-/*----------------------------------------------------------------------------
-**  SpiceMainConn
-**      This is the master Javascript class for establishing and
-**  managing a connection to a Spice Server.
-**
-**      Invocation:  You must pass an object with properties as follows:
-**          uri         (required)  Uri of a WebSocket listener that is
-**                                  connected to a spice server.
-**          password    (required)  Password to send to the spice server
-**          message_id  (optional)  Identifier of an element in the DOM
-**                                  where SpiceConn will write messages.
-**                                  It will use classes spice-messages-x,
-**                                  where x is one of info, warning, or error.
-**          screen_id   (optional)  Identifier of an element in the DOM
-**                                  where SpiceConn will create any new
-**                                  client screens.  This is the main UI.
-**          dump_id     (optional)  If given, an element to use for
-**                                  dumping every single image + canvas drawn.
-**                                  Sometimes useful for debugging.
-**          onerror     (optional)  If given, a function to receive async
-**                                  errors.  Note that you should also catch
-**                                  errors for ones that occur inline
-**          onagent     (optional)  If given, a function to be called when
-**                                  a VD agent is connected; a good opportunity
-**                                  to request a resize
-**          onsuccess   (optional)  If given, a function to be called when the
-**                                  session is successfully connected
-**
-**  Throws error if there are troubles.  Requires a modern (by 2012 standards)
-**      browser, including WebSocket and WebSocket.binaryType == arraybuffer
-**
-**--------------------------------------------------------------------------*/
-function SpiceMainConn()
-{
-    if (typeof WebSocket === "undefined")
-        throw new Error("WebSocket unavailable.  You need to use a different browser.");
-
-    SpiceConn.apply(this, arguments);
-
-    this.agent_msg_queue = [];
-    this.file_xfer_tasks = {};
-    this.file_xfer_task_id = 0;
-    this.file_xfer_read_queue = [];
-    this.ports = [];
-}
-
-SpiceMainConn.prototype = Object.create(SpiceConn.prototype);
-SpiceMainConn.prototype.process_channel_message = function(msg)
-{
-    if (msg.type == Constants.SPICE_MSG_MAIN_MIGRATE_BEGIN)
-    {
-        this.known_unimplemented(msg.type, "Main Migrate Begin");
-        return true;
-    }
-
-    if (msg.type == Constants.SPICE_MSG_MAIN_MIGRATE_CANCEL)
-    {
-        this.known_unimplemented(msg.type, "Main Migrate Cancel");
-        return true;
-    }
-
-    if (msg.type == Constants.SPICE_MSG_MAIN_INIT)
-    {
-        this.log_info("Connected to " + this.ws.url);
-        this.report_success("Connected")
-        this.main_init = new Messages.SpiceMsgMainInit(msg.data);
-        this.connection_id = this.main_init.session_id;
-        this.agent_tokens = this.main_init.agent_tokens;
-
-        if (DEBUG > 0)
-        {
-            // FIXME - there is a lot here we don't handle; mouse modes, agent,
-            //          ram_hint, multi_media_time
-            this.log_info("session id "                 + this.main_init.session_id +
-                          " ; display_channels_hint "   + this.main_init.display_channels_hint +
-                          " ; supported_mouse_modes "   + this.main_init.supported_mouse_modes +
-                          " ; current_mouse_mode "      + this.main_init.current_mouse_mode +
-                          " ; agent_connected "         + this.main_init.agent_connected +
-                          " ; agent_tokens "            + this.main_init.agent_tokens +
-                          " ; multi_media_time "        + this.main_init.multi_media_time +
-                          " ; ram_hint "                + this.main_init.ram_hint);
+class SpiceMainConn extends SpiceConn {
+    constructor(options) {
+        if (typeof WebSocket === "undefined") {
+            throw new Error("WebSocket unavailable. Use a modern browser.");
         }
-
-        this.our_mm_time = Date.now();
-        this.mm_time = this.main_init.multi_media_time;
-
-        this.handle_mouse_mode(this.main_init.current_mouse_mode,
-                               this.main_init.supported_mouse_modes);
-
-        if (this.main_init.agent_connected)
-            this.connect_agent();
-
-        var attach = new Messages.SpiceMiniData;
-        attach.type = Constants.SPICE_MSGC_MAIN_ATTACH_CHANNELS;
-        attach.size = attach.buffer_size();
-        this.send_msg(attach);
-        return true;
+        super(options);
+        this.agentMsgQueue = [];
+        this.fileXferTasks = new Map();
+        this.fileXferTaskId = 0;
+        this.fileXferReadQueue = [];
+        this.ports = [];
     }
 
-    if (msg.type == Constants.SPICE_MSG_MAIN_MOUSE_MODE)
-    {
-        var mode = new Messages.SpiceMsgMainMouseMode(msg.data);
-        DEBUG > 0 && this.log_info("Mouse supported modes " + mode.supported_modes + "; current " + mode.current_mode);
-        this.handle_mouse_mode(mode.current_mode, mode.supported_modes);
-        return true;
-    }
-
-    if (msg.type == Constants.SPICE_MSG_MAIN_MULTI_MEDIA_TIME)
-    {
-        this.known_unimplemented(msg.type, "Main Multi Media Time");
-        return true;
-    }
-
-    if (msg.type == Constants.SPICE_MSG_MAIN_CHANNELS_LIST)
-    {
-        var i;
-        var chans;
-        DEBUG > 0 && console.log("channels");
-        chans = new Messages.SpiceMsgChannels(msg.data);
-        for (i = 0; i < chans.channels.length; i++)
-        {
-            var conn = {
-                        uri: this.ws.url,
-                        parent: this,
-                        connection_id : this.connection_id,
-                        type : chans.channels[i].type,
-                        chan_id : chans.channels[i].id
-                    };
-            if (chans.channels[i].type == Constants.SPICE_CHANNEL_DISPLAY)
-            {
-                if (chans.channels[i].id == 0) {
-                    this.display = new SpiceDisplayConn(conn);
-                } else {
-                    this.log_warn("The spice-html5 client does not handle multiple heads.");
+    process_channel_message(msg) {
+        switch (msg.type) {
+            case Constants.SPICE_MSG_MAIN_INIT: {
+                const init = new Messages.SpiceMsgMainInit(msg.data);
+                this.connection_id = init.session_id;
+                this.agent_tokens = init.agent_tokens;
+                this.handleMainInit(init);
+                return true;
+            }
+            case Constants.SPICE_MSG_MAIN_MOUSE_MODE: {
+                const mode = new Messages.SpiceMsgMainMouseMode(msg.data);
+                this.handle_mouse_mode(mode.current_mode, mode.supported_modes);
+                DEBUG > 0 && this.log_info(`Mouse supported modes: ${mode.supported_modes}, current: ${mode.current_mode}`);
+                return true;
+            }
+            case Constants.SPICE_MSG_MAIN_CHANNELS_LIST: {
+                this.handleChannelsList(new Messages.SpiceMsgChannels(msg.data));
+                return true;
+            }
+            case Constants.SPICE_MSG_MAIN_AGENT_CONNECTED:
+            case Constants.SPICE_MSG_MAIN_AGENT_CONNECTED_TOKENS: {
+                if (msg.type === Constants.SPICE_MSG_MAIN_AGENT_CONNECTED_TOKENS) {
+                    const tokens = new Messages.SpiceMsgMainAgentTokens(msg.data);
+                    this.agent_tokens = tokens.num_tokens;
                 }
+                this.connect_agent();
+                return true;
             }
-            else if (chans.channels[i].type == Constants.SPICE_CHANNEL_INPUTS)
-            {
-                this.inputs = new SpiceInputsConn(conn);
-                this.inputs.mouse_mode = this.mouse_mode;
+            case Constants.SPICE_MSG_MAIN_AGENT_TOKEN: {
+                const tokens = new Messages.SpiceMsgMainAgentTokens(msg.data);
+                this.agent_tokens += tokens.num_tokens;
+                this.send_agent_message_queue();
+                this.processFileXferQueue();
+                return true;
             }
-            else if (chans.channels[i].type == Constants.SPICE_CHANNEL_CURSOR)
-                this.cursor = new SpiceCursorConn(conn);
-            else if (chans.channels[i].type == Constants.SPICE_CHANNEL_PLAYBACK)
-                this.cursor = new SpicePlaybackConn(conn);
-            else if (chans.channels[i].type == Constants.SPICE_CHANNEL_PORT)
-                this.ports.push(new SpicePortConn(conn));
-            else
-            {
-                if (! ("extra_channels" in this))
-                    this.extra_channels = [];
-                this.extra_channels[i] = new SpiceConn(conn);
-                this.log_err("Channel type " + this.extra_channels[i].channel_type() + " not implemented");
+            case Constants.SPICE_MSG_MAIN_AGENT_DISCONNECTED: {
+                this.agent_connected = false;
+                return true;
             }
-
+            case Constants.SPICE_MSG_MAIN_AGENT_DATA: {
+                const data = new Messages.SpiceMsgMainAgentData(msg.data);
+                return this.handleAgentData(data);
+            }
+            default:
+                this.handleUnimplemented(msg.type);
+                return true;
         }
-
-        return true;
     }
 
-    if (msg.type == Constants.SPICE_MSG_MAIN_AGENT_CONNECTED)
-    {
-        this.connect_agent();
-        return true;
+    stop() {
+        this.state = "closing";
+        this.cleanupConnections();
+        super.cleanup();
     }
 
-    if (msg.type == Constants.SPICE_MSG_MAIN_AGENT_CONNECTED_TOKENS)
-    {
-        var connected_tokens = new Messages.SpiceMsgMainAgentTokens(msg.data);
-        this.agent_tokens = connected_tokens.num_tokens;
-        this.connect_agent();
-        return true;
-    }
+    send_agent_message_queue(message) {
+        if (!this.agent_connected) return;
+        if (message) this.agentMsgQueue.push(message);
 
-    if (msg.type == Constants.SPICE_MSG_MAIN_AGENT_TOKEN)
-    {
-        var remaining_tokens, tokens = new Messages.SpiceMsgMainAgentTokens(msg.data);
-        this.agent_tokens += tokens.num_tokens;
-        this.send_agent_message_queue();
-
-        remaining_tokens = this.agent_tokens;
-        while (remaining_tokens > 0 && this.file_xfer_read_queue.length > 0)
-        {
-            var xfer_task = this.file_xfer_read_queue.shift();
-            this.file_xfer_read(xfer_task, xfer_task.read_bytes);
-            remaining_tokens--;
+        while (this.agent_tokens > 0 && this.agentMsgQueue.length > 0) {
+            const msg = this.agentMsgQueue.shift();
+            this.send_msg(msg);
+            this.agent_tokens--;
         }
-        return true;
     }
 
-    if (msg.type == Constants.SPICE_MSG_MAIN_AGENT_DISCONNECTED)
-    {
-        this.agent_connected = false;
-        return true;
-    }
+    send_agent_message(type, message) {
+        const agentData = new Messages.SpiceMsgcMainAgentData(type, message);
+        const maxSize = Constants.VD_AGENT_MAX_DATA_SIZE - Messages.SpiceMiniData.prototype.buffer_size();
+        const buffer = new ArrayBuffer(agentData.buffer_size());
+        agentData.to_buffer(buffer);
+        let offset = 0;
 
-    if (msg.type == Constants.SPICE_MSG_MAIN_AGENT_DATA)
-    {
-        var agent_data = new Messages.SpiceMsgMainAgentData(msg.data);
-        if (agent_data.type == Constants.VD_AGENT_ANNOUNCE_CAPABILITIES)
-        {
-            var agent_caps = new Messages.VDAgentAnnounceCapabilities(agent_data.data);
-            if (agent_caps.request)
-                this.announce_agent_capabilities(0);
-            return true;
+        while (offset < buffer.byteLength) {
+            const end = Math.min(offset + maxSize, buffer.byteLength);
+            const chunk = new Messages.SpiceMiniData();
+            chunk.type = Constants.SPICE_MSGC_MAIN_AGENT_DATA;
+            chunk.size = end - offset;
+            chunk.data = buffer.slice(offset, end);
+            this.send_agent_message_queue(chunk);
+            offset = end;
         }
-        else if (agent_data.type == Constants.VD_AGENT_FILE_XFER_STATUS)
-        {
-            this.handle_file_xfer_status(new Messages.VDAgentFileXferStatusMessage(agent_data.data));
-            return true;
-        }
-
-        return false;
     }
 
-    if (msg.type == Constants.SPICE_MSG_MAIN_MIGRATE_SWITCH_HOST)
-    {
-        this.known_unimplemented(msg.type, "Main Migrate Switch Host");
-        return true;
+    announce_agent_capabilities(request) {
+        const caps = new Messages.VDAgentAnnounceCapabilities(request, 
+            (1 << Constants.VD_AGENT_CAP_MOUSE_STATE) |
+            (1 << Constants.VD_AGENT_CAP_MONITORS_CONFIG) |
+            (1 << Constants.VD_AGENT_CAP_REPLY)
+        );
+        this.send_agent_message(Constants.VD_AGENT_ANNOUNCE_CAPABILITIES, caps);
     }
 
-    if (msg.type == Constants.SPICE_MSG_MAIN_MIGRATE_END)
-    {
-        this.known_unimplemented(msg.type, "Main Migrate End");
-        return true;
+    resize_window(flags, width, height, depth, x, y) {
+        const config = new Messages.VDAgentMonitorsConfig(flags, width, height, depth, x, y);
+        this.send_agent_message(Constants.VD_AGENT_MONITORS_CONFIG, config);
     }
 
-    if (msg.type == Constants.SPICE_MSG_MAIN_NAME)
-    {
-        this.known_unimplemented(msg.type, "Main Name");
-        return true;
+    file_xfer_start(file) {
+        const taskId = this.fileXferTaskId++;
+        const task = new SpiceFileXferTask(taskId, file);
+        task.create_progressbar();
+        this.fileXferTasks.set(taskId, task);
+        const startMsg = new Messages.VDAgentFileXferStartMessage(taskId, file.name, file.size);
+        this.send_agent_message(Constants.VD_AGENT_FILE_XFER_START, startMsg);
     }
 
-    if (msg.type == Constants.SPICE_MSG_MAIN_UUID)
-    {
-        this.known_unimplemented(msg.type, "Main UUID");
-        return true;
-    }
-
-    if (msg.type == Constants.SPICE_MSG_MAIN_MIGRATE_BEGIN_SEAMLESS)
-    {
-        this.known_unimplemented(msg.type, "Main Migrate Begin Seamless");
-        return true;
-    }
-
-    if (msg.type == Constants.SPICE_MSG_MAIN_MIGRATE_DST_SEAMLESS_ACK)
-    {
-        this.known_unimplemented(msg.type, "Main Migrate Dst Seamless ACK");
-        return true;
-    }
-
-    if (msg.type == Constants.SPICE_MSG_MAIN_MIGRATE_DST_SEAMLESS_NACK)
-    {
-        this.known_unimplemented(msg.type, "Main Migrate Dst Seamless NACK");
-        return true;
-    }
-
-    return false;
-}
-
-SpiceMainConn.prototype.stop = function(msg)
-{
-    this.state = "closing";
-
-    if (this.inputs)
-    {
-        this.inputs.cleanup();
-        this.inputs = undefined;
-    }
-
-    if (this.cursor)
-    {
-        this.cursor.cleanup();
-        this.cursor = undefined;
-    }
-
-    if (this.display)
-    {
-        this.display.cleanup();
-        this.display.destroy_surfaces();
-        this.display = undefined;
-    }
-
-    this.cleanup();
-
-    if ("extra_channels" in this)
-        for (var e in this.extra_channels)
-            this.extra_channels[e].cleanup();
-    this.extra_channels = undefined;
-}
-
-SpiceMainConn.prototype.send_agent_message_queue = function(message)
-{
-    if (!this.agent_connected)
-        return;
-
-    if (message)
-        this.agent_msg_queue.push(message);
-
-    while (this.agent_tokens > 0 && this.agent_msg_queue.length > 0)
-    {
-        var mr = this.agent_msg_queue.shift();
-        this.send_msg(mr);
-        this.agent_tokens--;
-    }
-}
-
-SpiceMainConn.prototype.send_agent_message = function(type, message)
-{
-    var agent_data = new Messages.SpiceMsgcMainAgentData(type, message);
-    var sb = 0, maxsize = Constants.VD_AGENT_MAX_DATA_SIZE - Messages.SpiceMiniData.prototype.buffer_size();
-    var data = new ArrayBuffer(agent_data.buffer_size());
-    agent_data.to_buffer(data);
-    while (sb < agent_data.buffer_size())
-    {
-        var eb = Math.min(sb + maxsize, agent_data.buffer_size());
-        var mr = new Messages.SpiceMiniData();
-        mr.type = Constants.SPICE_MSGC_MAIN_AGENT_DATA;
-        mr.size = eb - sb;
-        mr.data = data.slice(sb, eb);
-        this.send_agent_message_queue(mr);
-        sb = eb;
-    }
-}
-
-SpiceMainConn.prototype.announce_agent_capabilities = function(request)
-{
-    var caps = new Messages.VDAgentAnnounceCapabilities(request, (1 << Constants.VD_AGENT_CAP_MOUSE_STATE) |
-                                                        (1 << Constants.VD_AGENT_CAP_MONITORS_CONFIG) |
-                                                        (1 << Constants.VD_AGENT_CAP_REPLY));
-    this.send_agent_message(Constants.VD_AGENT_ANNOUNCE_CAPABILITIES, caps);
-}
-
-SpiceMainConn.prototype.resize_window = function(flags, width, height, depth, x, y)
-{
-    var monitors_config = new Messages.VDAgentMonitorsConfig(flags, width, height, depth, x, y);
-    this.send_agent_message(Constants.VD_AGENT_MONITORS_CONFIG, monitors_config);
-}
-
-SpiceMainConn.prototype.file_xfer_start = function(file)
-{
-    var task_id, xfer_start, task;
-
-    task_id = this.file_xfer_task_id++;
-    task = new SpiceFileXferTask(task_id, file);
-    task.create_progressbar();
-    this.file_xfer_tasks[task_id] = task;
-    xfer_start = new Messages.VDAgentFileXferStartMessage(task_id, file.name, file.size);
-    this.send_agent_message(Constants.VD_AGENT_FILE_XFER_START, xfer_start);
-}
-
-SpiceMainConn.prototype.handle_file_xfer_status = function(file_xfer_status) {
-    var xfer_error, xfer_task;
-    if (!this.file_xfer_tasks[file_xfer_status.id]) {
-        return;
-    }
-    xfer_task = this.file_xfer_tasks[file_xfer_status.id];
-    switch (file_xfer_status.result) {
-        case Constants.VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA:
-            this.file_xfer_read(xfer_task);
+    file_xfer_read(task, startByte = 0) {
+        const chunkSize = 32 * Constants.VD_AGENT_MAX_DATA_SIZE;
+        if (!task || !this.fileXferTasks.has(task.id) || (startByte > 0 && startByte === task.file.size)) {
             return;
-        case Constants.VD_AGENT_FILE_XFER_STATUS_CANCELLED:
-            xfer_error = "Transfer cancelled";
-            xfer_task.show_message(xfer_error, true);
-            break;
-        case Constants.VD_AGENT_FILE_XFER_STATUS_ERROR:
-            xfer_error = "Transfer error";
-            xfer_task.show_message(xfer_error, true);
-            break;
-        case Constants.VD_AGENT_FILE_XFER_STATUS_SUCCESS:
-            xfer_task.show_message("Transfer completed successfully", false);
-            break;
-        default:
-            xfer_error = "Unknown error: " + file_xfer_status.result;
-            xfer_task.show_message(xfer_error, true);
-            break;
+        }
+
+        if (task.cancelled) {
+            this.cancelFileXfer(task);
+            return;
+        }
+
+        const start = startByte;
+        const end = Math.min(start + chunkSize, task.file.size);
+
+        if (!this.agent_tokens) {
+            task.read_bytes = start;
+            this.fileXferReadQueue.push(task);
+            return;
+        }
+
+        const slice = task.file.slice(start, end);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = new Messages.VDAgentFileXferDataMessage(task.id, e.target.result.byteLength, e.target.result);
+            this.send_agent_message(Constants.VD_AGENT_FILE_XFER_DATA, data);
+            this.file_xfer_read(task, end);
+            task.update_progressbar(end);
+        };
+        reader.readAsArrayBuffer(slice);
     }
 
-    this.file_xfer_completed(xfer_task, xfer_error);
-};
-
-SpiceMainConn.prototype.file_xfer_read = function(file_xfer_task, start_byte)
-{
-    var FILE_XFER_CHUNK_SIZE = 32 * Constants.VD_AGENT_MAX_DATA_SIZE;
-    var _this = this;
-    var sb, eb;
-    var slice, reader;
-
-    if (!file_xfer_task ||
-        !this.file_xfer_tasks[file_xfer_task.id] ||
-        (start_byte > 0 && start_byte == file_xfer_task.file.size))
-    {
-        return;
+    file_xfer_completed(task, error) {
+        if (error) {
+            this.log_err(error);
+        } else {
+            this.log_info(`File '${task.file.name}' transferred successfully`);
+            setTimeout(() => task.remove_progressbar(), 3000);
+        }
+        this.fileXferTasks.delete(task.id);
     }
 
-    if (file_xfer_task.cancelled)
-    {
-        var xfer_status = new Messages.VDAgentFileXferStatusMessage(file_xfer_task.id,
-                                                           Constants.VD_AGENT_FILE_XFER_STATUS_CANCELLED);
-        this.send_agent_message(Constants.VD_AGENT_FILE_XFER_STATUS, xfer_status);
-        delete this.file_xfer_tasks[file_xfer_task.id];
-        return;
+    connect_agent() {
+        this.agent_connected = true;
+        const start = new Messages.SpiceMsgcMainAgentStart(~0);
+        const startMsg = new Messages.SpiceMiniData();
+        startMsg.build_msg(Constants.SPICE_MSGC_MAIN_AGENT_START, start);
+        this.send_msg(startMsg);
+        this.announce_agent_capabilities(1);
+        this.onagent?.(this);
     }
 
-    sb = start_byte || 0,
-    eb = Math.min(sb + FILE_XFER_CHUNK_SIZE, file_xfer_task.file.size);
-
-    if (!this.agent_tokens)
-    {
-        file_xfer_task.read_bytes = sb;
-        this.file_xfer_read_queue.push(file_xfer_task);
-        return;
+    handle_mouse_mode(current, supported) {
+        this.mouse_mode = current;
+        if (current !== Constants.SPICE_MOUSE_MODE_CLIENT && (supported & Constants.SPICE_MOUSE_MODE_CLIENT)) {
+            const request = new Messages.SpiceMsgcMainMouseModeRequest(Constants.SPICE_MOUSE_MODE_CLIENT);
+            const msg = new Messages.SpiceMiniData();
+            msg.build_msg(Constants.SPICE_MSGC_MAIN_MOUSE_MODE_REQUEST, request);
+            this.send_msg(msg);
+        }
+        if (this.inputs) this.inputs.mouse_mode = current;
     }
 
-    reader = new FileReader();
-    reader.onload = function(e)
-    {
-        var xfer_data = new Messages.VDAgentFileXferDataMessage(file_xfer_task.id,
-                                                       e.target.result.byteLength,
-                                                       e.target.result);
-        _this.send_agent_message(Constants.VD_AGENT_FILE_XFER_DATA, xfer_data);
-        _this.file_xfer_read(file_xfer_task, eb);
-        file_xfer_task.update_progressbar(eb);
-    };
-
-    slice = file_xfer_task.file.slice(sb, eb);
-    reader.readAsArrayBuffer(slice);
-}
-
-SpiceMainConn.prototype.file_xfer_completed = function(file_xfer_task, error) {
-    if (error) {
-        this.log_err(error);
-    } else {
-        this.log_info("Файл '" + file_xfer_task.file.name + "' успешно передан");
-        // Удаление прогресс-бара через 3 секунды
-        setTimeout(() => file_xfer_task.remove_progressbar(), 3000);
-    }
-    delete this.file_xfer_tasks[file_xfer_task.id];
-};
-
-SpiceMainConn.prototype.connect_agent = function()
-{
-    this.agent_connected = true;
-
-    var agent_start = new Messages.SpiceMsgcMainAgentStart(~0);
-    var mr = new Messages.SpiceMiniData();
-    mr.build_msg(Constants.SPICE_MSGC_MAIN_AGENT_START, agent_start);
-    this.send_msg(mr);
-
-    this.announce_agent_capabilities(1);
-
-    if (this.onagent !== undefined)
-        this.onagent(this);
-
-}
-
-SpiceMainConn.prototype.handle_mouse_mode = function(current, supported)
-{
-    this.mouse_mode = current;
-    if (current != Constants.SPICE_MOUSE_MODE_CLIENT && (supported & Constants.SPICE_MOUSE_MODE_CLIENT))
-    {
-        var mode_request = new Messages.SpiceMsgcMainMouseModeRequest(Constants.SPICE_MOUSE_MODE_CLIENT);
-        var mr = new Messages.SpiceMiniData();
-        mr.build_msg(Constants.SPICE_MSGC_MAIN_MOUSE_MODE_REQUEST, mode_request);
-        this.send_msg(mr);
+    relative_now() {
+        return (Date.now() - this.our_mm_time) + this.mm_time;
     }
 
-    if (this.inputs)
-        this.inputs.mouse_mode = current;
-}
+    handleMainInit(init) {
+        this.log_info(`Connected to ${this.ws.url}`);
+        this.report_success("Connected");
+        this.our_mm_time = Date.now();
+        this.mm_time = init.multi_media_time;
+        this.handle_mouse_mode(init.current_mouse_mode, init.supported_mouse_modes);
+        if (init.agent_connected) this.connect_agent();
+        const attachMsg = new Messages.SpiceMiniData();
+        attachMsg.type = Constants.SPICE_MSGC_MAIN_ATTACH_CHANNELS;
+        this.send_msg(attachMsg);
+    }
 
-/* Shift current time to attempt to get a time matching that of the server */
-SpiceMainConn.prototype.relative_now = function()
-{
-    var ret = (Date.now() - this.our_mm_time) + this.mm_time;
-    return ret;
+    handleChannelsList(chans) {
+        for (const { type, id } of chans.channels) {
+            const conn = { uri: this.ws.url, parent: this, connection_id: this.connection_id, type, chan_id: id };
+            switch (type) {
+                case Constants.SPICE_CHANNEL_DISPLAY:
+                    if (id === 0) {
+                        this.display = new SpiceDisplayConn(conn);
+                    } else {
+                        this.log_warn("Multiple heads not supported.");
+                    }
+                    break;
+                case Constants.SPICE_CHANNEL_INPUTS:
+                    this.inputs = new SpiceInputsConn(conn);
+                    this.inputs.mouse_mode = this.mouse_mode;
+                    break;
+                case Constants.SPICE_CHANNEL_CURSOR:
+                    this.cursor = new SpiceCursorConn(conn);
+                    break;
+                case Constants.SPICE_CHANNEL_PLAYBACK:
+                    this.playback = new SpicePlaybackConn(conn);
+                    break;
+                case Constants.SPICE_CHANNEL_PORT:
+                    this.ports.push(new SpicePortConn(conn));
+                    break;
+                default:
+                    this.extra_channels = this.extra_channels || [];
+                    this.extra_channels.push(new SpiceConn(conn));
+                    this.log_err(`Channel type ${type} not implemented`);
+            }
+        }
+    }
+
+    handleAgentData(data) {
+        switch (data.type) {
+            case Constants.VD_AGENT_ANNOUNCE_CAPABILITIES: {
+                const caps = new Messages.VDAgentAnnounceCapabilities(data.data);
+                if (caps.request) this.announce_agent_capabilities(0);
+                return true;
+            }
+            case Constants.VD_AGENT_FILE_XFER_STATUS: {
+                this.handle_file_xfer_status(new Messages.VDAgentFileXferStatusMessage(data.data));
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    handle_file_xfer_status(status) {
+        const task = this.fileXferTasks.get(status.id);
+        if (!task) return;
+
+        switch (status.result) {
+            case Constants.VD_AGENT_FILE_XFER_STATUS_CAN_SEND_DATA:
+                this.file_xfer_read(task);
+                break;
+            case Constants.VD_AGENT_FILE_XFER_STATUS_CANCELLED:
+                task.show_message("Transfer cancelled", true);
+                this.file_xfer_completed(task, "Transfer cancelled");
+                break;
+            case Constants.VD_AGENT_FILE_XFER_STATUS_ERROR:
+                task.show_message("Transfer error", true);
+                this.file_xfer_completed(task, "Transfer error");
+                break;
+            case Constants.VD_AGENT_FILE_XFER_STATUS_SUCCESS:
+                task.show_message("Transfer completed successfully", false);
+                this.file_xfer_completed(task);
+                break;
+            default:
+                task.show_message(`Unknown error: ${status.result}`, true);
+                this.file_xfer_completed(task, `Unknown error: ${status.result}`);
+        }
+    }
+
+    cleanupConnections() {
+        this.inputs?.cleanup();
+        this.inputs = undefined;
+        this.cursor?.cleanup();
+        this.cursor = undefined;
+        if (this.display) {
+            this.display.cleanup();
+            this.display.destroy_surfaces();
+            this.display = undefined;
+        }
+        this.playback?.cleanup();
+        this.playback = undefined;
+        this.ports.forEach(port => port.cleanup());
+        this.ports = [];
+        if (this.extra_channels) {
+            this.extra_channels.forEach(channel => channel.cleanup());
+            this.extra_channels = undefined;
+        }
+    }
+
+    processFileXferQueue() {
+        while (this.agent_tokens > 0 && this.fileXferReadQueue.length > 0) {
+            const task = this.fileXferReadQueue.shift();
+            this.file_xfer_read(task, task.read_bytes);
+            this.agent_tokens--;
+        }
+    }
+
+    cancelFileXfer(task) {
+        const status = new Messages.VDAgentFileXferStatusMessage(task.id, Constants.VD_AGENT_FILE_XFER_STATUS_CANCELLED);
+        this.send_agent_message(Constants.VD_AGENT_FILE_XFER_STATUS, status);
+        this.fileXferTasks.delete(task.id);
+    }
+
+    handleUnimplemented(type) {
+        const names = {
+            [Constants.SPICE_MSG_MAIN_MIGRATE_BEGIN]: "Main Migrate Begin",
+            [Constants.SPICE_MSG_MAIN_MIGRATE_CANCEL]: "Main Migrate Cancel",
+            [Constants.SPICE_MSG_MAIN_MULTI_MEDIA_TIME]: "Main Multi Media Time",
+            [Constants.SPICE_MSG_MAIN_MIGRATE_SWITCH_HOST]: "Main Migrate Switch Host",
+            [Constants.SPICE_MSG_MAIN_MIGRATE_END]: "Main Migrate End",
+            [Constants.SPICE_MSG_MAIN_NAME]: "Main Name",
+            [Constants.SPICE_MSG_MAIN_UUID]: "Main UUID",
+            [Constants.SPICE_MSG_MAIN_MIGRATE_BEGIN_SEAMLESS]: "Main Migrate Begin Seamless",
+            [Constants.SPICE_MSG_MAIN_MIGRATE_DST_SEAMLESS_ACK]: "Main Migrate Dst Seamless ACK",
+            [Constants.SPICE_MSG_MAIN_MIGRATE_DST_SEAMLESS_NACK]: "Main Migrate Dst Seamless NACK"
+        };
+        this.known_unimplemented(type, names[type] || "Unknown");
+    }
 }
 
 export {
-  SpiceMainConn,
-  handle_file_dragover,
-  handle_file_drop,
-  resize_helper,
-  handle_resize,
-  sendCtrlAltDel,
-  simulateClipboardTyping,
-  sendCtrlAltF,
+    SpiceMainConn,
+    handle_file_dragover,
+    handle_file_drop,
+    resize_helper,
+    handle_resize,
+    sendCtrlAltDel,
+    simulateClipboardTyping,
+    sendCtrlAltF
 };
