@@ -369,10 +369,10 @@ SpiceMsgMainAgentData.prototype =
     from_buffer: function(a, at)
     {
         at = at || 0;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         this.protocol = dv.getUint32(at, true); at += 4;
         this.type = dv.getUint32(at, true); at += 4;
-        this.opaque = dv.getUint64(at, true); at += 8;
+        this.opaque = dv.getBigUint64(at, true); at += 8;
         this.size = dv.getUint32(at, true); at += 4;
         if (a.byteLength > at)
         {
@@ -657,8 +657,8 @@ SpiceMsgNotify.prototype =
     {
         at = at || 0;
         var i;
-        var dv = new SpiceDataView(a);
-        this.time_stamp = dv.getUint64(at, true); at += 8;
+        var dv = new DataView(a);
+        this.time_stamp = dv.getBigUint64(at, true); at += 8;
         this.severity = dv.getUint32(at, true); at += 4;
         this.visibility = dv.getUint32(at, true); at += 4;
         this.what = dv.getUint32(at, true); at += 4;
@@ -1100,12 +1100,12 @@ SpiceMsgDisplayStreamCreate.prototype =
     from_buffer: function(a, at)
     {
         at = at || 0;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         this.surface_id = dv.getUint32(at, true); at += 4;
         this.id = dv.getUint32(at, true); at += 4;
         this.flags = dv.getUint8(at, true); at += 1;
         this.codec_type = dv.getUint8(at, true); at += 1;
-        this.stamp = dv.getUint64(at, true); at += 8;
+        this.stamp = dv.getBigUint64(at, true); at += 8;
         this.stream_width = dv.getUint32(at, true); at += 4;
         this.stream_height = dv.getUint32(at, true); at += 4;
         this.src_width = dv.getUint32(at, true); at += 4;
@@ -1268,7 +1268,7 @@ function SpiceMsgDisplayInvalList(a, at = 0) {
 
 SpiceMsgDisplayInvalList.prototype = {
     from_buffer: function (a, at) {
-        const dv = new SpiceDataView(a);
+        const dv = new DataView(a);
         const count = dv.getUint16(at, true);
         at += 2;
 
@@ -1276,7 +1276,7 @@ SpiceMsgDisplayInvalList.prototype = {
         for (let i = 0; i < count; i++) {
             resources[i] = {
                 type: dv.getUint8(at, true),
-                id: dv.getUint64(at + 1, true),
+                id: dv.getBigUint64(at + 1, true),
             };
             at += 9;
         }
