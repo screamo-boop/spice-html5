@@ -44,7 +44,6 @@ import {
 import { DEBUG } from './utils.js';
 import * as Webm from './webm.js';
 import { rsa_encrypt } from './ticket.js';
-
 function SpiceConn(o) {
     this.buffer_pool = {};
     
@@ -216,244 +215,187 @@ SpiceConn.prototype =
         this.ws.send(mb);
     },
 
-send_msg: function(msg) {
-    const size = msg.buffer_size();
-    const buffer = this.get_buffer(size);
-    msg.to_buffer(buffer);
-    this.messages_sent++;
-    
-    if (DEBUG > 0) {
-        console.log(`>> hdr ${this.channel_type()} type ${msg.type} size ${buffer.byteLength}`);
+    send_msg: function(msg) {
+        const size = msg.buffer_size();
+        const buffer = this.get_buffer(size);
+        msg.to_buffer(buffer);
+        this.messages_sent++;
+        
+        if (DEBUG > 0) {
+            console.log(`>> hdr ${this.channel_type()} type ${msg.type} size ${buffer.byteLength}`);
+        }
+        
+        if (DEBUG > 2) {
+            hexdump_buffer(buffer);
+        }
+        
+        this.ws.send(buffer);
+    },
+
+process_inbound: function(mb, saved_header) {
+    const state = this.state;
+    const SPICE_MAGIC = Constants.SPICE_MAGIC;
+    const SPICE_LINK_ERR_OK = Constants.SPICE_LINK_ERR_OK;
+    const SPICE_LINK_ERR_PERMISSION_DENIED = Constants.SPICE_LINK_ERR_PERMISSION_DENIED;
+    const miniDataBufferSize = SpiceMiniData.prototype.buffer_size();
+
+    DEBUG > 2 && console.log(this.type + ": processing message of size " + mb.byteLength + "; state is " + state);
+
+    if (state === 'ready') {
+        if (!saved_header) {
+            const msg = new SpiceMiniData(mb);
+            
+            if (DEBUG > 0 && msg.type > 500) {
+                alert("Something has gone very wrong; we think we have message of type " + msg.type);
+                debugger;
+            }
+
+            if (msg.size === 0) {
+                this.process_message(msg);
+                this.wire_reader.request(miniDataBufferSize);
+            } else {
+                this.wire_reader.request(msg.size);
+                this.wire_reader.save_header(msg);
+            }
+        } else {
+            saved_header.data = mb;
+            this.process_message(saved_header);
+            this.wire_reader.request(miniDataBufferSize);
+            this.wire_reader.save_header(undefined);
+        }
+        return;
     }
-    
-    if (DEBUG > 2) {
-        hexdump_buffer(buffer);
+
+    if (state === 'start') {
+        const reply_hdr = new SpiceLinkHeader(mb);
+        if (reply_hdr.magic !== SPICE_MAGIC) {
+            this.state = "error";
+            this.report_error(new Error('Error: magic mismatch: ' + reply_hdr.magic));
+        } else {
+            this.wire_reader.request(reply_hdr.size);
+            this.state = "link";
+        }
+        return;
     }
-    
-    this.ws.send(buffer);
+
+    if (state === 'link') {
+        const reply_link = new SpiceLinkReply(mb);
+        if (reply_link.error) {
+            this.state = "error";
+            this.report_error(new Error('Error: reply link error ' + reply_link.error));
+        } else {
+            this.send_ticket(rsa_encrypt(reply_link.pub_key, this.password + String.fromCharCode(0)));
+            this.state = "ticket";
+            this.wire_reader.request(SpiceLinkAuthReply.prototype.buffer_size());
+        }
+        return;
+    }
+
+    if (state === 'ticket') {
+        const auth_reply = new SpiceLinkAuthReply(mb);
+        if (auth_reply.auth_code === SPICE_LINK_ERR_OK) {
+            DEBUG > 0 && console.log(this.type + ': Connected');
+            
+            if (this.type === Constants.SPICE_CHANNEL_DISPLAY) {
+                const dinit = new SpiceMsgcDisplayInit();
+                const reply = new SpiceMiniData();
+                reply.build_msg(Constants.SPICE_MSGC_DISPLAY_INIT, dinit);
+                DEBUG > 0 && console.log("Request display init");
+                this.send_msg(reply);
+            }
+            
+            this.state = "ready";
+            this.wire_reader.request(miniDataBufferSize);
+            
+            if (this.timeout) {
+                window.clearTimeout(this.timeout);
+                delete this.timeout;
+            }
+        } else {
+            this.state = "error";
+            const errorMsg = auth_reply.auth_code === SPICE_LINK_ERR_PERMISSION_DENIED
+                ? "Permission denied."
+                : "Unexpected link error " + auth_reply.auth_code;
+            this.report_error(new Error(errorMsg));
+        }
+    }
 },
-
-    process_inbound: function(mb, saved_header)
-    {
-        DEBUG > 2 && console.log(this.type + ": processing message of size " + mb.byteLength + "; state is " + this.state);
-        if (this.state == "ready")
-        {
-            if (saved_header == undefined)
-            {
-                var msg = new SpiceMiniData(mb);
-
-                if (msg.type > 500)
-                {
-                    if (DEBUG > 0)
-                    {
-                        alert("Something has gone very wrong; we think we have message of type " + msg.type);
-                        debugger;
-                    }
-                }
-
-                if (msg.size == 0)
-                {
-                    this.process_message(msg);
-                    this.wire_reader.request(SpiceMiniData.prototype.buffer_size());
-                }
-                else
-                {
-                    this.wire_reader.request(msg.size);
-                    this.wire_reader.save_header(msg);
-                }
-            }
-            else
-            {
-                saved_header.data = mb;
-                this.process_message(saved_header);
-                this.wire_reader.request(SpiceMiniData.prototype.buffer_size());
-                this.wire_reader.save_header(undefined);
-            }
-        }
-
-        else if (this.state == "start")
-        {
-            this.reply_hdr = new SpiceLinkHeader(mb);
-            if (this.reply_hdr.magic != Constants.SPICE_MAGIC)
-            {
-                this.state = "error";
-                var e = new Error('Error: magic mismatch: ' + this.reply_hdr.magic);
-                this.report_error(e);
-            }
-            else
-            {
-                // FIXME - Determine major/minor version requirements
-                this.wire_reader.request(this.reply_hdr.size);
-                this.state = "link";
-            }
-        }
-
-        else if (this.state == "link")
-        {
-            this.reply_link = new SpiceLinkReply(mb);
-             // FIXME - Screen the caps - require minihdr at least, right?
-            if (this.reply_link.error)
-            {
-                this.state = "error";
-                var e = new Error('Error: reply link error ' + this.reply_link.error);
-                this.report_error(e);
-            }
-            else
-            {
-                this.send_ticket(rsa_encrypt(this.reply_link.pub_key, this.password + String.fromCharCode(0)));
-                this.state = "ticket";
-                this.wire_reader.request(SpiceLinkAuthReply.prototype.buffer_size());
-            }
-        }
-
-        else if (this.state == "ticket")
-        {
-            this.auth_reply = new SpiceLinkAuthReply(mb);
-            if (this.auth_reply.auth_code == Constants.SPICE_LINK_ERR_OK)
-            {
-                DEBUG > 0 && console.log(this.type + ': Connected');
-
-                if (this.type == Constants.SPICE_CHANNEL_DISPLAY)
-                {
-                    // FIXME - pixmap and glz dictionary config info?
-                    var dinit = new SpiceMsgcDisplayInit();
-                    var reply = new SpiceMiniData();
-                    reply.build_msg(Constants.SPICE_MSGC_DISPLAY_INIT, dinit);
-                    DEBUG > 0 && console.log("Request display init");
-                    this.send_msg(reply);
-                }
-                this.state = "ready";
-                this.wire_reader.request(SpiceMiniData.prototype.buffer_size());
-                if (this.timeout)
-                {
-                    window.clearTimeout(this.timeout);
-                    delete this.timeout;
-                }
-            }
-            else
-            {
-                this.state = "error";
-                if (this.auth_reply.auth_code == Constants.SPICE_LINK_ERR_PERMISSION_DENIED)
-                {
-                    var e = new Error("Permission denied.");
-                }
-                else
-                {
-                    var e = new Error("Unexpected link error " + this.auth_reply.auth_code);
-                }
-                this.report_error(e);
-            }
-        }
-    },
-
-    process_common_messages : function(msg)
-    {
-        if (msg.type == Constants.SPICE_MSG_SET_ACK)
-        {
-            var ack = new SpiceMsgSetAck(msg.data);
-            // FIXME - what to do with generation?
-            this.ack_window = ack.window;
-            DEBUG > 1 && console.log(this.type + ": set ack to " + ack.window);
-            this.msgs_until_ack = this.ack_window;
-            var ackack = new SpiceMsgcAckSync(ack);
-            var reply = new SpiceMiniData();
-            reply.build_msg(Constants.SPICE_MSGC_ACK_SYNC, ackack);
-            this.send_msg(reply);
-            return true;
-        }
-
-        if (msg.type == Constants.SPICE_MSG_PING)
-        {
-            DEBUG > 1 && console.log("ping!");
-            var pong = new SpiceMiniData;
-            pong.type = Constants.SPICE_MSGC_PONG;
-            if (msg.data)
-            {
-                pong.data = msg.data.slice(0, 12);
-            }
-            pong.size = pong.buffer_size();
-            this.send_msg(pong);
-            return true;
-        }
-
-        if (msg.type == Constants.SPICE_MSG_NOTIFY)
-        {
-            // FIXME - Visibility + what
-            var notify = new SpiceMsgNotify(msg.data);
-            if (notify.severity == Constants.SPICE_NOTIFY_SEVERITY_ERROR)
-                this.log_err(notify.message);
-            else if (notify.severity == Constants.SPICE_NOTIFY_SEVERITY_WARN )
-                this.log_warn(notify.message);
-            else
-                this.log_info(notify.message);
-            return true;
-        }
-
-        return false;
-
-    },
-
-    process_message: function(msg)
-    {
-        var rc;
-        var start = Date.now();
-        DEBUG > 0 && console.log("<< hdr " + this.channel_type() + " type " + msg.type + " size " + (msg.data && msg.data.byteLength));
-        rc = this.process_common_messages(msg);
-        if (! rc)
-        {
-            if (this.process_channel_message)
-            {
-                rc = this.process_channel_message(msg);
-            }
-            else
-                this.log_err(this.channel_type() + ": No message handlers for this channel; message " + msg.type);
-        }
-
-        if (this.msgs_until_ack !== undefined && this.ack_window)
-        {
-            this.msgs_until_ack--;
-            if (this.msgs_until_ack <= 0)
-            {
+    process_common_messages: function(msg) {
+        const handlers = {
+            [Constants.SPICE_MSG_SET_ACK]: () => {
+                const ack = new SpiceMsgSetAck(msg.data);
+                this.ack_window = ack.window;
                 this.msgs_until_ack = this.ack_window;
-                var ack = new SpiceMiniData();
+                
+                const ackack = new SpiceMsgcAckSync(ack);
+                const reply = new SpiceMiniData();
+                reply.build_msg(Constants.SPICE_MSGC_ACK_SYNC, ackack);
+                
+                DEBUG > 1 && console.log(`${this.type}: set ack to ${ack.window}`);
+                this.send_msg(reply);
+                return true;
+            },
+            
+            [Constants.SPICE_MSG_PING]: () => {
+                DEBUG > 1 && console.log("ping!");
+                const pong = new SpiceMiniData();
+                pong.type = Constants.SPICE_MSGC_PONG;
+                
+                if (msg.data) {
+                    pong.data = msg.data.slice(0, 12);
+                }
+                
+                pong.size = pong.buffer_size();
+                this.send_msg(pong);
+                return true;
+            },
+            
+            [Constants.SPICE_MSG_NOTIFY]: () => {
+                const notify = new SpiceMsgNotify(msg.data);
+                const severityMap = {
+                    [Constants.SPICE_NOTIFY_SEVERITY_ERROR]: this.log_err,
+                    [Constants.SPICE_NOTIFY_SEVERITY_WARN]: this.log_warn,
+                    [Constants.SPICE_NOTIFY_SEVERITY_INFO]: this.log_info
+                };
+                
+                severityMap[notify.severity]?.call(this, notify.message);
+                return true;
+            }
+        };
+        
+        const handler = handlers[msg.type];
+        return handler ? handler.call(this) : false;
+    },
+
+    process_message: function(msg) {
+        const start = performance.now();
+        const channel = this.channel_type();
+        let rc = this.process_common_messages(msg);
+
+        if (!rc && this.process_channel_message) {
+            rc = this.process_channel_message(msg);
+        }
+
+        if (!rc) {
+            this.log_err(`${channel}: No message handlers for this channel; message ${msg.type}`);
+        }
+
+        if (this.msgs_until_ack !== undefined && this.ack_window) {
+            if (--this.msgs_until_ack <= 0) {
+                this.msgs_until_ack = this.ack_window;
+                const ack = new SpiceMiniData();
                 ack.type = Constants.SPICE_MSGC_ACK;
                 this.send_msg(ack);
-                DEBUG > 1 && console.log(this.type + ": sent ack");
+                DEBUG > 1 && console.log(`${this.type}: sent ack`);
             }
         }
 
-        var delta = Date.now() - start;
-        if (DEBUG > 0 || delta > Webm.Constants.GAP_DETECTION_THRESHOLD)
-            console.log("delta " + this.channel_type() + ":" + msg.type + " " + delta);
+        const delta = performance.now() - start;
+        if (DEBUG > 0 || delta > Webm.Constants.GAP_DETECTION_THRESHOLD) {
+            console.log(`delta ${channel}:${msg.type} ${delta.toFixed(2)}ms`);
+        }
+
         return rc;
-    },
-
-    channel_type: function()
-    {
-        if (this.type == Constants.SPICE_CHANNEL_MAIN)
-            return "main";
-        else if (this.type == Constants.SPICE_CHANNEL_DISPLAY)
-            return "display";
-        else if (this.type == Constants.SPICE_CHANNEL_INPUTS)
-            return "inputs";
-        else if (this.type == Constants.SPICE_CHANNEL_CURSOR)
-            return "cursor";
-        else if (this.type == Constants.SPICE_CHANNEL_PLAYBACK)
-            return "playback";
-        else if (this.type == Constants.SPICE_CHANNEL_RECORD)
-            return "record";
-        else if (this.type == Constants.SPICE_CHANNEL_TUNNEL)
-            return "tunnel";
-        else if (this.type == Constants.SPICE_CHANNEL_SMARTCARD)
-            return "smartcard";
-        else if (this.type == Constants.SPICE_CHANNEL_USBREDIR)
-            return "usbredir";
-        else if (this.type == Constants.SPICE_CHANNEL_PORT)
-            return "port";
-        else if (this.type == Constants.SPICE_CHANNEL_WEBDAV)
-            return "webdav";
-        return "unknown-" + this.type;
-
     },
 
     log_info: function()
@@ -542,6 +484,24 @@ send_msg: function(msg) {
         this.report_error(e);
     },
 }
+
+SpiceConn.prototype.channelTypeMap = {
+    [Constants.SPICE_CHANNEL_MAIN]: "main",
+    [Constants.SPICE_CHANNEL_DISPLAY]: "display",
+    [Constants.SPICE_CHANNEL_INPUTS]: "inputs",
+    [Constants.SPICE_CHANNEL_CURSOR]: "cursor",
+    [Constants.SPICE_CHANNEL_PLAYBACK]: "playback",
+    [Constants.SPICE_CHANNEL_RECORD]: "record",
+    [Constants.SPICE_CHANNEL_TUNNEL]: "tunnel",
+    [Constants.SPICE_CHANNEL_SMARTCARD]: "smartcard",
+    [Constants.SPICE_CHANNEL_USBREDIR]: "usbredir",
+    [Constants.SPICE_CHANNEL_PORT]: "port",
+    [Constants.SPICE_CHANNEL_WEBDAV]: "webdav"
+};
+
+SpiceConn.prototype.channel_type = function() {
+    return this.channelTypeMap[this.type] || `unknown-${this.type}`;
+};
 
 function spiceconn_timeout(sc)
 {
