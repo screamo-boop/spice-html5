@@ -474,7 +474,7 @@ function SpiceMsgcMainAgentData(type, data)
 {
     this.protocol = Constants.VD_AGENT_PROTOCOL;
     this.type = type;
-    this.opaque = 0;
+    this.opaque = BigInt(0);
     this.size = data.buffer_size();
     this.data = data;
 }
@@ -484,10 +484,10 @@ SpiceMsgcMainAgentData.prototype =
     to_buffer: function(a, at)
     {
         at = at || 0;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         dv.setUint32(at, this.protocol, true); at += 4;
         dv.setUint32(at, this.type, true); at += 4;
-        dv.setUint64(at, this.opaque, true); at += 8;
+        dv.setBigUint64(at, this.opaque, true); at += 8;
         dv.setUint32(at, this.size, true); at += 4;
         this.data.to_buffer(a, at);
     },
@@ -618,33 +618,37 @@ VDAgentFileXferStartMessage.prototype =
     }
 }
 
-function VDAgentFileXferDataMessage(id, size, data)
-{
+function VDAgentFileXferDataMessage(id, size, data) {
     this.id = id;
     this.size = size;
     this.data = data;
 }
 
-VDAgentFileXferDataMessage.prototype =
-{
-    to_buffer: function(a, at)
-    {
-        at = at || 0;
-        var dv = new SpiceDataView(a);
-        dv.setUint32(at, this.id, true); at += 4;
-        dv.setUint64(at, this.size, true); at += 8;
-        if (this.data && this.data.byteLength > 0)
-        {
-            var u8arr = new Uint8Array(this.data);
-            for (var i = 0; i < u8arr.length; i++, at++)
-                dv.setUint8(at, u8arr[i]);
+VDAgentFileXferDataMessage.prototype = {
+    to_buffer: function(a, at = 0) {
+        const dv = new DataView(a, at);
+        let offset = 0;
+
+        dv.setUint32(offset, this.id, true);
+        offset += 4;
+
+        dv.setBigUint64(offset, BigInt(this.size), true);
+        offset += 8;
+
+        if (this.data && this.data.byteLength > 0) {
+            const u8arr = new Uint8Array(this.data);
+            for (let i = 0; i < u8arr.length; i++, offset++) {
+                dv.setUint8(offset, u8arr[i]);
+            }
         }
+
+        return offset;
     },
-    buffer_size: function()
-    {
+
+    buffer_size: function() {
         return 12 + this.size;
     }
-}
+};
 
 function SpiceMsgNotify(a, at)
 {
@@ -676,7 +680,7 @@ function SpiceMsgcDisplayInit()
 {
     this.pixmap_cache_id = 1;
     this.glz_dictionary_id = 0;
-    this.pixmap_cache_size = 10 * 1024 * 1024;
+    this.pixmap_cache_size = BigInt(104857600);
     this.glz_dictionary_window_size = 0;
 }
 
@@ -685,9 +689,9 @@ SpiceMsgcDisplayInit.prototype =
     to_buffer: function(a, at)
     {
         at = at || 0;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         dv.setUint8(at, this.pixmap_cache_id, true); at++;
-        dv.setUint64(at, this.pixmap_cache_size, true); at += 8;
+        dv.setBigUint64(at, this.pixmap_cache_size, true); at += 8;
         dv.setUint8(at, this.glz_dictionary_id, true); at++;
         dv.setUint32(at, this.glz_dictionary_window_size, true); at += 4;
     },
@@ -723,7 +727,7 @@ SpiceMsgDisplayDrawCopy.prototype =
     from_buffer: function(a, at)
     {
         at = at || 0;
-        var dv = new SpiceDataView(a);
+        var dv = new DataView(a);
         this.base = new SpiceMsgDisplayBase;
         at = this.base.from_dv(dv, at, a);
         this.data = new SpiceCopy;

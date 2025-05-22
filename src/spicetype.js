@@ -102,7 +102,7 @@ function SpiceImageDescriptor()
 
 SpiceImageDescriptor.prototype = {
     from_dv: function(dv, at, mb) {
-        this.id = dv.getUint64(at, true); 
+        this.id = dv.getBigUint64(at, true); 
         this.type = dv.getUint8(at += 8, true); 
         this.flags = dv.getUint8(++at, true); 
         this.width = dv.getUint32(++at, true); 
