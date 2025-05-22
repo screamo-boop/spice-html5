@@ -47,6 +47,7 @@ import { rsa_encrypt } from './ticket.js';
 
 function SpiceConn(o)
 {
+    this.buffer_pool = {};
     if (o === undefined || o.uri === undefined || ! o.uri)
         throw new Error("You must specify a uri");
 
@@ -194,14 +195,18 @@ SpiceConn.prototype =
         this.ws.send(mb);
     },
 
-    send_msg: function(msg)
-    {
-        var mb = new ArrayBuffer(msg.buffer_size());
-        msg.to_buffer(mb);
+    send_msg: function(msg) {
+        const size = msg.buffer_size();
+        let buffer = this.buffer_pool[size];
+
+        if (!buffer) {
+            buffer = new ArrayBuffer(size);
+            this.buffer_pool[size] = buffer;
+        }
+
+        msg.to_buffer(buffer);
         this.messages_sent++;
-        DEBUG > 0 && console.log(">> hdr " + this.channel_type() + " type " + msg.type + " size " + mb.byteLength);
-        DEBUG > 2 && hexdump_buffer(mb);
-        this.ws.send(mb);
+        this.ws.send(buffer);
     },
 
     process_inbound: function(mb, saved_header)
