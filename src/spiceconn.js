@@ -45,93 +45,114 @@ import { DEBUG } from './utils.js';
 import * as Webm from './webm.js';
 import { rsa_encrypt } from './ticket.js';
 
-function SpiceConn(o)
-{
+function SpiceConn(o) {
     this.buffer_pool = {};
-    if (o === undefined || o.uri === undefined || ! o.uri)
+    
+    if (!o || !o.uri) {
         throw new Error("You must specify a uri");
+    }
 
     this.ws = new WebSocket(o.uri, 'binary');
-
-    if (! this.ws.binaryType)
-        throw new Error("WebSocket doesn't support binaryType.  Try a different browser.");
-
-    this.connection_id = o.connection_id !== undefined ? o.connection_id : 0;
-    this.type = o.type !== undefined ? o.type : Constants.SPICE_CHANNEL_MAIN;
-    this.chan_id = o.chan_id !== undefined ? o.chan_id : 0;
-    if (o.parent !== undefined)
-    {
-        this.parent = o.parent;
-        this.message_id = o.parent.message_id;
-        this.password = o.parent.password;
+    if (!this.ws.binaryType) {
+        throw new Error("WebSocket doesn't support binaryType. Try a different browser.");
     }
-    if (o.screen_id !== undefined)
-        this.screen_id = o.screen_id;
-    if (o.dump_id !== undefined)
-        this.dump_id = o.dump_id;
-    if (o.message_id !== undefined)
-        this.message_id = o.message_id;
-    if (o.password !== undefined)
-        this.password = o.password;
-    if (o.onerror !== undefined)
-        this.onerror = o.onerror;
-    if (o.onsuccess !== undefined)
-        this.onsuccess = o.onsuccess;
-    if (o.onagent !== undefined)
-        this.onagent = o.onagent;
+
+    const {
+        connection_id = 0,
+        type = Constants.SPICE_CHANNEL_MAIN,
+        chan_id = 0,
+        parent,
+        screen_id,
+        dump_id,
+        message_id,
+        password,
+        onerror,
+        onsuccess,
+        onagent
+    } = o;
+
+    this.connection_id = connection_id;
+    this.type = type;
+    this.chan_id = chan_id;
+    
+    if (parent) {
+        this.parent = parent;
+        this.message_id = parent.message_id;
+        this.password = parent.password;
+    }
+    
+    if (screen_id !== undefined) this.screen_id = screen_id;
+    if (dump_id !== undefined) this.dump_id = dump_id;
+    if (message_id !== undefined) this.message_id = message_id;
+    if (password !== undefined) this.password = password;
+    if (onerror !== undefined) this.onerror = onerror;
+    if (onsuccess !== undefined) this.onsuccess = onsuccess;
+    if (onagent !== undefined) this.onagent = onagent;
 
     this.state = "connecting";
-    this.ws.parent = this;
     this.wire_reader = new SpiceWireReader(this, this.process_inbound);
     this.messages_sent = 0;
     this.warnings = [];
 
-    this.ws.addEventListener('open', function(e) {
-        DEBUG > 0 && console.log(">> WebSockets.onopen");
-        DEBUG > 0 && console.log("id " + this.parent.connection_id +"; type " + this.parent.type);
+    this._handleOpen = this._handleOpen.bind(this);
+    this._handleError = this._handleError.bind(this);
+    this._handleClose = this._handleClose.bind(this);
 
-        /***********************************************************************
-        **          WHERE IT ALL REALLY BEGINS
-        ***********************************************************************/
-        this.parent.send_hdr();
-        this.parent.wire_reader.request(SpiceLinkHeader.prototype.buffer_size());
-        this.parent.state = "start";
-    });
-    this.ws.addEventListener('error', function(e) {
-        if ('url' in e.target) {
-            this.parent.log_err("WebSocket error: Can't connect to websocket on URL: " + e.target.url);
-        }
-        this.parent.report_error(e);
-    });
-    this.ws.addEventListener('close', function(e) {
-        DEBUG > 0 && console.log(">> WebSockets.onclose");
-        DEBUG > 0 && console.log("id " + this.parent.connection_id +"; type " + this.parent.type);
-        DEBUG > 0 && console.log(e);
-        if (this.parent.state != "closing" && this.parent.state != "error" && this.parent.onerror !== undefined)
-        {
-            var e;
-            if (this.parent.state == "connecting")
-                e = new Error("Connection refused.");
-            else if (this.parent.state == "start" || this.parent.state == "link")
-                e = new Error("Unexpected protocol mismatch.");
-            else if (this.parent.state == "ticket")
-                e = new Error("Bad password.");
-            else
-                e = new Error("Unexpected close while " + this.parent.state);
+    this.ws.addEventListener('open', this._handleOpen);
+    this.ws.addEventListener('error', this._handleError);
+    this.ws.addEventListener('close', this._handleClose);
 
-            this.parent.onerror(e);
-            this.parent.log_err(e.toString());
-        }
-    });
-
-    if (this.ws.readyState == 2 || this.ws.readyState == 3)
+    if (this.ws.readyState === 2 || this.ws.readyState === 3) {
         throw new Error("Unable to connect to " + o.uri);
+    }
 
-    this.timeout = window.setTimeout(spiceconn_timeout, Constants.SPICE_CONNECT_TIMEOUT, this);
+    this.timeout = window.setTimeout(() => this.handle_timeout(), Constants.SPICE_CONNECT_TIMEOUT);
 }
 
 SpiceConn.prototype =
 {
+    get_buffer : function (size)
+    {
+    if (!this.buffer_pool[size]) {
+        this.buffer_pool[size] = new ArrayBuffer(size);
+    }
+    return this.buffer_pool[size];
+},
+    _handleOpen : function() {
+        DEBUG > 0 && console.log(">> WebSockets.onopen");
+        DEBUG > 0 && console.log(`id ${this.connection_id}; type ${this.type}`);
+        
+        this.send_hdr();
+        this.wire_reader.request(SpiceLinkHeader.prototype.buffer_size());
+        this.state = "start";
+    },
+
+    _handleError : function(e) {
+        if ('url' in e.target) {
+            this.log_err(`WebSocket error: Can't connect to websocket on URL: ${e.target.url}`);
+        }
+        this.report_error(e);
+    },
+
+    _handleClose : function(e) {
+        DEBUG > 0 && console.log(">> WebSockets.onclose");
+        DEBUG > 0 && console.log(`id ${this.connection_id}; type ${this.type}`);
+        DEBUG > 0 && console.log(e);
+
+        if (this.state !== "closing" && this.state !== "error" && this.onerror) {
+            const errorStates = {
+                connecting: "Connection refused.",
+                start: "Unexpected protocol mismatch.",
+                link: "Unexpected protocol mismatch.",
+                ticket: "Bad password.",
+            };
+            const message = errorStates[this.state] || `Unexpected close while ${this.state}`;
+            const error = new Error(message);
+            
+            this.onerror(error);
+            this.log_err(error.toString());
+        }
+    },
     send_hdr : function ()
     {
         var hdr = new SpiceLinkHeader;
@@ -195,19 +216,22 @@ SpiceConn.prototype =
         this.ws.send(mb);
     },
 
-    send_msg: function(msg) {
-        const size = msg.buffer_size();
-        let buffer = this.buffer_pool[size];
-
-        if (!buffer) {
-            buffer = new ArrayBuffer(size);
-            this.buffer_pool[size] = buffer;
-        }
-
-        msg.to_buffer(buffer);
-        this.messages_sent++;
-        this.ws.send(buffer);
-    },
+send_msg: function(msg) {
+    const size = msg.buffer_size();
+    const buffer = this.get_buffer(size);
+    msg.to_buffer(buffer);
+    this.messages_sent++;
+    
+    if (DEBUG > 0) {
+        console.log(`>> hdr ${this.channel_type()} type ${msg.type} size ${buffer.byteLength}`);
+    }
+    
+    if (DEBUG > 2) {
+        hexdump_buffer(buffer);
+    }
+    
+    this.ws.send(buffer);
+},
 
     process_inbound: function(mb, saved_header)
     {
