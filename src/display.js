@@ -189,37 +189,35 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg)
                       descriptor : draw_copy.data.src_bitmap.descriptor
                     });
             }
-            else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_JPEG)
-            {
-                if (! draw_copy.data.src_bitmap.jpeg)
-                {
-                    this.log_warn("FIXME: DrawCopy could not handle this JPEG file.");
+            else if (draw_copy.data.src_bitmap.descriptor.type === Constants.SPICE_IMAGE_TYPE_JPEG) {
+                const jpegData = draw_copy.data.src_bitmap.jpeg?.data;
+                if (!jpegData) {
+                    this.log_warn("Error handling JPEG: no data");
                     return false;
                 }
 
-                // FIXME - how lame is this.  Be have it in binary format, and we have
-                //         to put it into string to get it back into jpeg.  Blech.
-                var tmpstr = "data:image/jpeg,";
-                var img = new Image;
-                var i;
-                var qdv = new Uint8Array(draw_copy.data.src_bitmap.jpeg.data);
-                for (i = 0; i < qdv.length; i++)
-                {
-                    tmpstr +=  '%';
-                    if (qdv[i] < 16)
-                        tmpstr += '0';
-                    tmpstr += qdv[i].toString(16);
-                }
+                const blob = new Blob([new Uint8Array(jpegData)], { type: 'image/jpeg' });
+                const imageUrl = URL.createObjectURL(blob);
 
-                img.o =
-                    { base: draw_copy.base,
-                      tag: "jpeg." + draw_copy.data.src_bitmap.surface_id,
-                      descriptor : draw_copy.data.src_bitmap.descriptor,
-                      sc : this,
-                    };
-                img.onload = handle_draw_jpeg_onload;
-                img.src = tmpstr;
+                const img = new Image();
+                img.o = {
+                    base: draw_copy.base,
+                    tag: `jpeg.${draw_copy.data.src_bitmap.surface_id}`,
+                    descriptor: draw_copy.data.src_bitmap.descriptor,
+                    sc: this
+                };
 
+                img.onload = () => {
+                    handle_draw_jpeg_onload.call(img);
+                    URL.revokeObjectURL(imageUrl);
+                };
+
+                img.onerror = () => {
+                    this.log_err("Ошибка загрузки JPEG");
+                    URL.revokeObjectURL(imageUrl);
+                };
+
+                img.src = imageUrl;
                 return true;
             }
             else if (draw_copy.data.src_bitmap.descriptor.type === Constants.SPICE_IMAGE_TYPE_JPEG_ALPHA) {
@@ -1032,6 +1030,8 @@ function process_mjpeg_stream_data(sc, m, time_until_due) {
 
     img.onload = () => {
         handle_draw_jpeg_onload.call(img);
+        URL.revokeObjectURL(img.src);
+
     };
 
     img.onerror = () => {
