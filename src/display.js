@@ -998,7 +998,7 @@ function process_mjpeg_stream_data(sc, m, time_until_due) {
     }
 
     if (!m.data || m.data.length === 0) {
-        sc.log_err("Нет данных в MJPEG кадре");
+        sc.log_err("No data im MJPEG");
         return;
     }
 
