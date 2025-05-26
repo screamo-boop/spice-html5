@@ -744,10 +744,6 @@ SpiceDisplayConn.prototype.draw_copy_helper = function(o) {
         context.putImageData(o.image_data, o.base.box.left, o.base.box.top);
     }
 
-    if (o.src_area.left > 0 || o.src_area.top > 0) {
-        this.log_warn("FIXME: DrawCopy not shifting copies");
-    }
-
     if (o.descriptor && (o.descriptor.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME)) {
         this.cache = this.cache || new Map();
         this.cache.set(o.descriptor.id, o.image_data);
@@ -933,56 +929,41 @@ function handle_draw_jpeg_onload() {
     const offscreenCanvas = new OffscreenCanvas(width, height);
     const offscreenCtx = offscreenCanvas.getContext('2d');
 
-    offscreenCtx.drawImage(this, 0, 0);
+    const needsFlipping = o.flip;
 
-    if (this.alpha_img) {
-        const maskCanvas = new OffscreenCanvas(this.alpha_img.width, this.alpha_img.height);
-        const maskCtx = maskCanvas.getContext('2d');
-
-        maskCtx.putImageData(this.alpha_img, 0, 0);
-        maskCtx.globalCompositeOperation = 'source-in';
-        maskCtx.drawImage(offscreenCanvas, 0, 0);
-
-        if (isSurfaceValid) {
-            context.drawImage(maskCanvas, o.base.box.left, o.base.box.top);
-        }
-    } 
-    else {
-        if (isSurfaceValid) {
-            context.drawImage(offscreenCanvas, o.base.box.left, o.base.box.top);
-        }
+    if (needsFlipping) {
+        offscreenCtx.save();
+        offscreenCtx.translate(0, height);
+        offscreenCtx.scale(1, -1);
+        offscreenCtx.drawImage(this, 0, 0, width, height);
+        offscreenCtx.restore();
+    } else {
+        offscreenCtx.drawImage(this, 0, 0, width, height);
     }
 
-    this.onload = undefined;
-    this.src = Utils.EMPTY_GIF_IMAGE;
+    const tempCanvas = new OffscreenCanvas(width, height);
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(offscreenCanvas, 0, 0, width, height);
 
-    if (o?.descriptor?.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME) {
-        sc.cache = sc.cache || new Map();
-        const imageData = isSurfaceValid
-            ? context.getImageData(o.base.box.left, o.base.box.top, o.base.box.right - o.base.box.left, o.base.box.bottom - o.base.box.top)
-            : null;
+    const processedImageData = tempCtx.getImageData(0, 0, width, height);
 
-        if (imageData) {
-            sc.cache.set(o.descriptor.id, imageData);
-        }
-    }
+    const draw_copy = {
+        base: o.base,
+        data: {
+            src_area: {
+                left: 0,
+                top: 0,
+                right: width,
+                bottom: height
+            },
+            src_bitmap: {
+                descriptor: null
+            }
+        },
+        image_data: processedImageData
+    };
 
-    if (Utils.DUMP_DRAWS && sc?.parent?.dump_id && isSurfaceValid) {
-        const debugCanvas = document.createElement('canvas');
-        debugCanvas.width = o.base.box.right - o.base.box.left;
-        debugCanvas.height = o.base.box.bottom - o.base.box.top;
-        debugCanvas.id = `${o.tag}.${surface.draw_count}.${surfaceId}@${o.base.box.left}x${o.base.box.top}`;
-
-        const debugCtx = debugCanvas.getContext('2d');
-        debugCtx.drawImage(isSurfaceValid ? offscreenCanvas : new Image(), 0, 0);
-
-        document.getElementById(sc.parent.dump_id)?.appendChild(debugCanvas);
-        surface.draw_count++;
-    }
-
-    if (sc?.streams?.[o?.id]?.report) {
-        process_stream_data_report(sc, o.id, o.msg_mmtime, o.msg_mmtime - sc.parent.relative_now());
-    }
+    sc.draw_copy_helper(draw_copy);
 }
 
 
@@ -998,7 +979,7 @@ function process_mjpeg_stream_data(sc, m, time_until_due) {
     }
 
     if (!m.data || m.data.length === 0) {
-        sc.log_err("No data im MJPEG");
+        sc.log_err("Нет данных в MJPEG кадре");
         return;
     }
 
@@ -1018,6 +999,9 @@ function process_mjpeg_stream_data(sc, m, time_until_due) {
     strm_base.box = m.dest || stream.dest;
     strm_base.clip = stream.clip;
 
+    const surface = sc.surfaces[stream.surface_id];
+    const shouldFlip = surface?.format === Constants.SPICE_SURFACE_FMT_32_xRGB;
+
     const img = new Image();
     img.o = {
         base: strm_base,
@@ -1025,13 +1009,13 @@ function process_mjpeg_stream_data(sc, m, time_until_due) {
         descriptor: null,
         sc,
         id: streamId,
-        msg_mmtime: m.base.multi_media_time
+        msg_mmtime: m.base.multi_media_time,
+        flip: shouldFlip 
     };
 
     img.onload = () => {
         handle_draw_jpeg_onload.call(img);
         URL.revokeObjectURL(img.src);
-
     };
 
     img.onerror = () => {
