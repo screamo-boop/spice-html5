@@ -29,35 +29,26 @@ import { SpiceRect } from './spicetype.js';
 import { convert_spice_lz_to_web } from './lz.js';
 import { convert_spice_bitmap_to_web } from './bitmap.js';
 
-/*----------------------------------------------------------------------------
-**  FIXME: putImageData  does not support Alpha blending
-**           or compositing.  So if we have data in an ImageData
-**           format, we have to draw it onto a context,
-**           and then use drawImage to put it onto the target,
-**           as drawImage does alpha.
-**--------------------------------------------------------------------------*/
-function putImageDataWithAlpha(context, d, x, y)
-{
-    var c = document.createElement("canvas");
-    var t = c.getContext("2d");
-    c.setAttribute('width', d.width);
-    c.setAttribute('height', d.height);
-    t.putImageData(d, 0, 0);
-    context.drawImage(c, x, y, d.width, d.height);
+const offscreen = new OffscreenCanvas(1, 1);
+const offCtx = offscreen.getContext('2d');
+offCtx.imageSmoothingEnabled = true;
+
+
+function putImageDataWithAlpha(context, imageData, x, y) {
+    offscreen.width = imageData.width;
+    offscreen.height = imageData.height;
+    offCtx.clearRect(0, 0, imageData.width, imageData.height);
+    offCtx.putImageData(imageData, 0, 0);
+    context.drawImage(offscreen, x, y, imageData.width, imageData.height);
 }
 
-/*----------------------------------------------------------------------------
-**  FIXME: Spice will send an image with '0' alpha when it is intended to
-**           go on a surface w/no alpha.  So in that case, we have to strip
-**           out the alpha.  The test case for this was flux box; in a Xspice
-**           server, right click on the desktop to get the menu; the top bar
-**           doesn't paint/highlight correctly w/out this change.
-**--------------------------------------------------------------------------*/
-function stripAlpha(d)
-{
-    var i;
-    for (i = 0; i < (d.width * d.height * 4); i += 4)
-        d.data[i + 3] = 255;
+function stripAlpha(imageData) {
+    const data = imageData.data;
+    const length = data.length;
+
+    for (let i = 3; i < length; i += 4) {
+        data[i] = 255;
+    }
 }
 
 /*----------------------------------------------------------------------------
@@ -72,26 +63,18 @@ function SpiceDisplayConn()
 SpiceDisplayConn.prototype = Object.create(SpiceConn.prototype);
 SpiceDisplayConn.prototype.process_channel_message = function(msg)
 {
-    if (msg.type == Constants.SPICE_MSG_DISPLAY_MODE)
-    {
-        this.known_unimplemented(msg.type, "Display Mode");
+    if ([Constants.SPICE_MSG_DISPLAY_MODE, Constants.SPICE_MSG_DISPLAY_MARK].includes(msg.type)) {
+        this.known_unimplemented(msg.type, msg.type === Constants.SPICE_MSG_DISPLAY_MODE ? "Display Mode" : "Display Mark");
         return true;
     }
 
-    if (msg.type == Constants.SPICE_MSG_DISPLAY_MARK)
-    {
-        // FIXME - DISPLAY_MARK not implemented (may be hard or impossible)
-        this.known_unimplemented(msg.type, "Display Mark");
-        return true;
-    }
-
-    if (msg.type == Constants.SPICE_MSG_DISPLAY_RESET)
-    {
+    if (msg.type === Constants.SPICE_MSG_DISPLAY_RESET) {
         Utils.DEBUG > 2 && console.log("Display reset");
-        this.surfaces[this.primary_surface].canvas.context.restore();
+        this.surfaces[this.primary_surface]?.canvas.context.restore();
+        console.log("display reset")
         return true;
     }
-
+ //   console.log(msg.type)
     if (msg.type == Constants.SPICE_MSG_DISPLAY_DRAW_COPY)
     {
         var draw_copy = new Messages.SpiceMsgDisplayDrawCopy(msg.data);
@@ -106,7 +89,6 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg)
             this.log_warn("FIXME: DrawCopy we don't handle mask flag: " + draw_copy.data.mask.flags);
         if (draw_copy.data.mask.bitmap)
             this.log_warn("FIXME: DrawCopy we don't handle mask");
-
         if (draw_copy.data && draw_copy.data.src_bitmap)
         {
             if (draw_copy.data.src_bitmap.descriptor.flags &&
@@ -117,25 +99,46 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg)
                 Utils.DEBUG <= 1 && this.log_draw("DrawCopy", draw_copy);
             }
 
-            if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_QUIC)
-            {
-                var canvas = this.surfaces[draw_copy.base.surface_id].canvas;
-                if (! draw_copy.data.src_bitmap.quic)
-                {
-                    this.log_warn("FIXME: DrawCopy could not handle this QUIC file.");
+            if (draw_copy.data.src_bitmap.descriptor.type === Constants.SPICE_IMAGE_TYPE_QUIC) {
+                const surfaceId = draw_copy.base.surface_id;
+                const canvas = this.surfaces[surfaceId]?.canvas;
+                
+                if (!canvas || !draw_copy.data.src_bitmap.quic) {
+                    this.log_warn("Unable to handle QUIC image");
                     return false;
                 }
-                var source_img = Quic.convert_spice_quic_to_web(canvas.context,
-                                        draw_copy.data.src_bitmap.quic);
 
-                return this.draw_copy_helper(
-                    { base: draw_copy.base,
-                      src_area: draw_copy.data.src_area,
-                      image_data: source_img,
-                      tag: "copyquic." + draw_copy.data.src_bitmap.quic.type,
-                      has_alpha: (draw_copy.data.src_bitmap.quic.type == Quic.Constants.QUIC_IMAGE_TYPE_RGBA ? true : false) ,
-                      descriptor : draw_copy.data.src_bitmap.descriptor
+                const descriptor = draw_copy.data.src_bitmap.descriptor;
+                if (this.cache && this.cache[descriptor.id]) {
+                    return this.draw_copy_helper({
+                        base: draw_copy.base,
+                        src_area: draw_copy.data.src_area,
+                        image_data: this.cache[descriptor.id],
+                        tag: `copyquic.cache.${descriptor.id}`,
+                        has_alpha: descriptor.type === Quic.Constants.QUIC_IMAGE_TYPE_RGBA,
+                        descriptor
                     });
+                }
+
+                const source_img = Quic.convert_spice_quic_to_web(canvas.context, draw_copy.data.src_bitmap.quic);
+                if (!source_img) {
+                    this.log_warn(`Не удалось преобразовать QUIC изображение: ${draw_copy.data.src_bitmap.quic.type}`);
+                    return false;
+                }
+
+                if (descriptor.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME) {
+                    this.cache = this.cache || {};
+                    this.cache[descriptor.id] = source_img;
+                }
+
+                return this.draw_copy_helper({
+                    base: draw_copy.base,
+                    src_area: draw_copy.data.src_area,
+                    image_data: source_img,
+                    tag: `copyquic.${draw_copy.data.src_bitmap.quic.type}`,
+                    has_alpha: draw_copy.data.src_bitmap.quic.type === Quic.Constants.QUIC_IMAGE_TYPE_RGBA,
+                    descriptor
+                });
             }
             else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_FROM_CACHE ||
                     draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_FROM_CACHE_LOSSLESS)
@@ -176,7 +179,7 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg)
                            both surfaces are alpha surfaces, you should
                            be able to just do a drawImage, which should
                            save time.  */
-
+                
                 return this.draw_copy_helper(
                     { base: draw_copy.base,
                       src_area: computed_src_area,
@@ -219,74 +222,63 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg)
 
                 return true;
             }
-            else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_JPEG_ALPHA)
-            {
-                if (! draw_copy.data.src_bitmap.jpeg_alpha)
-                {
-                    this.log_warn("FIXME: DrawCopy could not handle this JPEG ALPHA file.");
-                    return false;
-                }
-
-                // FIXME - how lame is this.  Be have it in binary format, and we have
-                //         to put it into string to get it back into jpeg.  Blech.
-                var tmpstr = "data:image/jpeg,";
-                var img = new Image;
-                var i;
-                var qdv = new Uint8Array(draw_copy.data.src_bitmap.jpeg_alpha.data);
-                for (i = 0; i < qdv.length; i++)
-                {
-                    tmpstr +=  '%';
-                    if (qdv[i] < 16)
-                        tmpstr += '0';
-                    tmpstr += qdv[i].toString(16);
-                }
-
-                img.o =
-                    { base: draw_copy.base,
-                      tag: "jpeg." + draw_copy.data.src_bitmap.surface_id,
-                      descriptor : draw_copy.data.src_bitmap.descriptor,
-                      sc : this,
-                    };
-
-                if (this.surfaces[draw_copy.base.surface_id].format == Constants.SPICE_SURFACE_FMT_32_ARGB)
-                {
-
-                    var canvas = this.surfaces[draw_copy.base.surface_id].canvas;
-                    img.alpha_img = convert_spice_lz_to_web(canvas.context,
-                                            draw_copy.data.src_bitmap.jpeg_alpha.alpha);
-                }
-                img.onload = handle_draw_jpeg_onload;
-                img.src = tmpstr;
-
-                return true;
+            else if (draw_copy.data.src_bitmap.descriptor.type === Constants.SPICE_IMAGE_TYPE_JPEG_ALPHA) {
+            if (!draw_copy.data.src_bitmap.jpeg_alpha) {
+                this.log_warn("Unable to handle JPEG_ALPHA image");
+                return false;
             }
-            else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_BITMAP)
-            {
-                var canvas = this.surfaces[draw_copy.base.surface_id].canvas;
-                if (! draw_copy.data.src_bitmap.bitmap)
-                {
-                    this.log_err("null bitmap");
-                    return false;
-                }
 
-                var source_img = convert_spice_bitmap_to_web(canvas.context,
-                                        draw_copy.data.src_bitmap.bitmap);
-                if (! source_img)
-                {
-                    this.log_warn("FIXME: Unable to interpret bitmap of format: " +
-                        draw_copy.data.src_bitmap.bitmap.format);
-                    return false;
-                }
+            const jpegData = new Uint8Array(draw_copy.data.src_bitmap.jpeg_alpha.data);
+            const blob = new Blob([jpegData], { type: 'image/jpeg' });
+            const imageUrl = URL.createObjectURL(blob);
 
-                return this.draw_copy_helper(
-                    { base: draw_copy.base,
-                      src_area: draw_copy.data.src_area,
-                      image_data: source_img,
-                      tag: "bitmap." + draw_copy.data.src_bitmap.bitmap.format,
-                      has_alpha: draw_copy.data.src_bitmap.bitmap == Constants.SPICE_BITMAP_FMT_32BIT ? false : true,
-                      descriptor : draw_copy.data.src_bitmap.descriptor
-                    });
+            const img = new Image();
+            img.o = {
+                base: draw_copy.base,
+                tag: `jpeg.${draw_copy.data.src_bitmap.surface_id}`,
+                descriptor: draw_copy.data.src_bitmap.descriptor,
+                sc: this
+            };
+
+            if (this.surfaces[draw_copy.base.surface_id]?.format === Constants.SPICE_SURFACE_FMT_32_ARGB) {
+                const canvas = this.surfaces[draw_copy.base.surface_id].canvas;
+                img.alpha_img = convert_spice_lz_to_web(canvas.context, draw_copy.data.src_bitmap.jpeg_alpha.alpha);
             }
+
+            img.onload = () => {
+                 handle_draw_jpeg_onload.call(img);
+                 URL.revokeObjectURL(img.src);
+            };
+            img.src = imageUrl;
+
+            return true;
+                }
+
+        else if (draw_copy.data.src_bitmap.descriptor.type === Constants.SPICE_IMAGE_TYPE_BITMAP) {
+            const surfaceId = draw_copy.base.surface_id;
+            const canvas = this.surfaces[surfaceId]?.canvas;
+            
+            if (!canvas || !draw_copy.data.src_bitmap.bitmap) {
+                this.log_err("Bitmap not found");
+                return false;
+            }
+
+            const source_img = convert_spice_bitmap_to_web(canvas.context, draw_copy.data.src_bitmap.bitmap);
+            
+            if (!source_img) {
+                this.log_warn(`Unable to interpret bitmap: ${draw_copy.data.src_bitmap.bitmap.format}`);
+                return false;
+            }
+
+            return this.draw_copy_helper({
+                base: draw_copy.base,
+                src_area: draw_copy.data.src_area,
+                image_data: source_img,
+                tag: `bitmap.${draw_copy.data.src_bitmap.bitmap.format}`,
+                has_alpha: draw_copy.data.src_bitmap.bitmap.format === Constants.SPICE_BITMAP_FMT_32BIT ? false : true,
+                descriptor: draw_copy.data.src_bitmap.descriptor
+            });
+        }
             else if (draw_copy.data.src_bitmap.descriptor.type == Constants.SPICE_IMAGE_TYPE_LZ_RGB)
             {
                 var canvas = this.surfaces[draw_copy.base.surface_id].canvas;
@@ -326,54 +318,71 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg)
         return false;
     }
 
-    if (msg.type == Constants.SPICE_MSG_DISPLAY_DRAW_FILL)
-    {
-        var draw_fill = new Messages.SpiceMsgDisplayDrawFill(msg.data);
-
-        Utils.DEBUG > 1 && this.log_draw("DrawFill", draw_fill);
-
-        if (draw_fill.data.rop_descriptor != Constants.SPICE_ROPD_OP_PUT)
-            this.log_warn("FIXME: DrawFill we don't handle ropd type: " + draw_fill.data.rop_descriptor);
-        if (draw_fill.data.mask.flags)
-            this.log_warn("FIXME: DrawFill we don't handle mask flag: " + draw_fill.data.mask.flags);
-        if (draw_fill.data.mask.bitmap)
-            this.log_warn("FIXME: DrawFill we don't handle mask");
-
-        if (draw_fill.data.brush.type == Constants.SPICE_BRUSH_TYPE_SOLID)
-        {
-            // FIXME - do brushes ever have alpha?
-            var color = draw_fill.data.brush.color & 0xffffff;
-            var color_str = "rgb(" + (color >> 16) + ", " + ((color >> 8) & 0xff) + ", " + (color & 0xff) + ")";
-            this.surfaces[draw_fill.base.surface_id].canvas.context.fillStyle = color_str;
-
-            this.surfaces[draw_fill.base.surface_id].canvas.context.fillRect(
-                draw_fill.base.box.left, draw_fill.base.box.top,
-                draw_fill.base.box.right - draw_fill.base.box.left,
-                draw_fill.base.box.bottom - draw_fill.base.box.top);
-
-            if (Utils.DUMP_DRAWS && this.parent.dump_id)
-            {
-                var debug_canvas = document.createElement("canvas");
-                debug_canvas.setAttribute('width', this.surfaces[draw_fill.base.surface_id].canvas.width);
-                debug_canvas.setAttribute('height', this.surfaces[draw_fill.base.surface_id].canvas.height);
-                debug_canvas.setAttribute('id', "fillbrush." + draw_fill.base.surface_id + "." + this.surfaces[draw_fill.base.surface_id].draw_count);
-                debug_canvas.getContext("2d").fillStyle = color_str;
-                debug_canvas.getContext("2d").fillRect(
-                    draw_fill.base.box.left, draw_fill.base.box.top,
-                    draw_fill.base.box.right - draw_fill.base.box.left,
-                    draw_fill.base.box.bottom - draw_fill.base.box.top);
-                document.getElementById(this.parent.dump_id).appendChild(debug_canvas);
-            }
-
-            this.surfaces[draw_fill.base.surface_id].draw_count++;
-
-        }
-        else
-        {
-            this.log_warn("FIXME: DrawFill can't handle brush type: " + draw_fill.data.brush.type);
-        }
-        return true;
+if (msg.type === Constants.SPICE_MSG_DISPLAY_DRAW_FILL) {
+    const draw_fill = new Messages.SpiceMsgDisplayDrawFill(msg.data);
+    
+    if (Utils.DEBUG > 1) {
+        this.log_draw("DrawFill", draw_fill);
     }
+
+    const { rop_descriptor, mask } = draw_fill.data;
+    if (rop_descriptor !== Constants.SPICE_ROPD_OP_PUT) {
+        this.log_warn(`Unknown ROPD: ${rop_descriptor}`);
+    }
+    
+    if (mask.flags) {
+        this.log_warn(`Unknown mask flag: ${mask.flags}`);
+    }
+    
+    if (mask.bitmap) {
+        this.log_warn("Mask not supported");
+    }
+
+    if (draw_fill.data.brush.type === Constants.SPICE_BRUSH_TYPE_SOLID) {
+        const surfaceId = draw_fill.base.surface_id;
+        const surface = this.surfaces[surfaceId];
+
+        if (!surface || !surface.canvas) {
+            this.log_err(`Surface ${surfaceId} not found`);
+            return false;
+        }
+
+        const { context } = surface.canvas;
+        const { left, top, right, bottom } = draw_fill.base.box;
+        const width = right - left;
+        const height = bottom - top;
+
+        const color = draw_fill.data.brush.color & 0xffffff;
+        const alpha = (draw_fill.data.brush.color >> 24) & 0xff;
+        const hasAlpha = alpha < 0xff;
+        const colorStr = hasAlpha 
+            ? `rgba(${color >> 16}, ${(color >> 8) & 0xff}, ${color & 0xff}, ${alpha / 255})`
+            : `rgb(${color >> 16}, ${(color >> 8) & 0xff}, ${color & 0xff})`;
+
+        context.fillStyle = colorStr;
+        context.fillRect(left, top, width, height);
+
+        if (Utils.DUMP_DRAWS && this.parent?.dump_id) {
+            const debugCanvas = document.createElement('canvas');
+            debugCanvas.width = surface.canvas.width;
+            debugCanvas.height = surface.canvas.height;
+            debugCanvas.id = `fillbrush.${surfaceId}.${surface.draw_count}`;
+            
+            const debugCtx = debugCanvas.getContext('2d');
+            debugCtx.fillStyle = colorStr;
+            debugCtx.fillRect(left, top, width, height);
+            
+            document.getElementById(this.parent.dump_id)?.appendChild(debugCanvas);
+        }
+
+        surface.draw_count++;
+    } 
+    else {
+        this.log_warn(`Unknown brush type: ${draw_fill.data.brush.type}`);
+    }
+
+    return true;
+}
 
     if (msg.type == Constants.SPICE_MSG_DISPLAY_DRAW_OPAQUE)
     {
@@ -483,49 +492,54 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg)
         return true;
     }
 
-    if (msg.type == Constants.SPICE_MSG_DISPLAY_SURFACE_CREATE)
-    {
-        if (! ("surfaces" in this))
+    if (msg.type === Constants.SPICE_MSG_DISPLAY_SURFACE_CREATE) {
+        if (!this.surfaces) {
             this.surfaces = [];
+        }
 
-        var m = new Messages.SpiceMsgSurfaceCreate(msg.data);
-        Utils.DEBUG > 1 && console.log(this.type + ": MsgSurfaceCreate id " + m.surface.surface_id
-                                    + "; " + m.surface.width + "x" + m.surface.height
-                                    + "; format " + m.surface.format
-                                    + "; flags " + m.surface.flags);
-        if (m.surface.format != Constants.SPICE_SURFACE_FMT_32_xRGB &&
-            m.surface.format != Constants.SPICE_SURFACE_FMT_32_ARGB)
-        {
-            this.log_warn("FIXME: cannot handle surface format " + m.surface.format + " yet.");
+        const m = new Messages.SpiceMsgSurfaceCreate(msg.data);
+        const { surface_id, width, height, format, flags } = m.surface;
+        
+        if (Utils.DEBUG > 1) {
+            console.log(`${this.type}: MsgSurfaceCreate id ${surface_id}; ${width}x${height}; format ${format}; flags ${flags}`);
+        }
+
+        const supportedFormats = [Constants.SPICE_SURFACE_FMT_32_xRGB, Constants.SPICE_SURFACE_FMT_32_ARGB];
+        if (!supportedFormats.includes(format)) {
+            this.log_warn(`Неподдерживаемый формат поверхности: ${format}`);
             return false;
         }
 
-        var canvas = document.createElement("canvas");
-        canvas.setAttribute('width', m.surface.width);
-        canvas.setAttribute('height', m.surface.height);
-        canvas.setAttribute('id', "spice_surface_" + m.surface.surface_id);
-        canvas.setAttribute('tabindex', m.surface.surface_id);
-        canvas.context = canvas.getContext("2d");
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.id = `spice_surface_${surface_id}`;
+        canvas.tabIndex = surface_id;
+        canvas.context = canvas.getContext('2d');
 
-        if (Utils.DUMP_CANVASES && this.parent.dump_id)
-            document.getElementById(this.parent.dump_id).appendChild(canvas);
+        if (Utils.DUMP_CANVASES && this.parent?.dump_id) {
+            const dumpContainer = document.getElementById(this.parent.dump_id);
+            dumpContainer?.appendChild(canvas);
+        }
 
         m.surface.canvas = canvas;
         m.surface.draw_count = 0;
-        this.surfaces[m.surface.surface_id] = m.surface;
+        this.surfaces[surface_id] = m.surface;
 
-        if (m.surface.flags & Constants.SPICE_SURFACE_FLAGS_PRIMARY)
-        {
-            this.primary_surface = m.surface.surface_id;
-
-            /* This .save() is done entirely to enable SPICE_MSG_DISPLAY_RESET */
+        if (flags & Constants.SPICE_SURFACE_FLAGS_PRIMARY) {
+            this.primary_surface = surface_id;
             canvas.context.save();
-            document.getElementById(this.parent.screen_id).appendChild(canvas);
 
-            /* We're going to leave width dynamic, but correctly set the height */
-            document.getElementById(this.parent.screen_id).style.height = m.surface.height + "px";
+            const screenContainer = document.getElementById(this.parent?.screen_id);
+            screenContainer?.appendChild(canvas);
+            
+            if (screenContainer) {
+                screenContainer.style.height = `${height}px`;
+            }
+
             this.hook_events();
         }
+
         return true;
     }
 
@@ -708,54 +722,55 @@ SpiceDisplayConn.prototype.delete_surface = function(surface_id)
 }
 
 
-SpiceDisplayConn.prototype.draw_copy_helper = function(o)
-{
+SpiceDisplayConn.prototype.draw_copy_helper = function(o) {
+    const surfaceId = o.base.surface_id;
+    const surface = this.surfaces[surfaceId];
+    
+    if (!surface || !surface.canvas) {
+        this.log_err(`Surface ${surfaceId} not found`);
+        return false;
+    }
 
-    var canvas = this.surfaces[o.base.surface_id].canvas;
-    if (o.has_alpha)
-    {
-        /* FIXME - This is based on trial + error, not a serious thoughtful
-                   analysis of what Spice requires.  See display.js for more. */
-        if (this.surfaces[o.base.surface_id].format == Constants.SPICE_SURFACE_FMT_32_xRGB)
-        {
+    const canvas = surface.canvas;
+    const context = canvas.context;
+    const format = surface.format;
+
+    if (o.has_alpha) {
+        if (format === Constants.SPICE_SURFACE_FMT_32_xRGB) {
             stripAlpha(o.image_data);
-            canvas.context.putImageData(o.image_data, o.base.box.left, o.base.box.top);
+            context.putImageData(o.image_data, o.base.box.left, o.base.box.top);
+        } else {
+            putImageDataWithAlpha(context, o.image_data, o.base.box.left, o.base.box.top);
         }
-        else
-            putImageDataWithAlpha(canvas.context, o.image_data,
-                    o.base.box.left, o.base.box.top);
-    }
-    else
-        canvas.context.putImageData(o.image_data, o.base.box.left, o.base.box.top);
-
-    if (o.src_area.left > 0 || o.src_area.top > 0)
-    {
-        this.log_warn("FIXME: DrawCopy not shifting draw copies just yet...");
+    } else {
+        context.putImageData(o.image_data, o.base.box.left, o.base.box.top);
     }
 
-    if (o.descriptor && (o.descriptor.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME))
-    {
-        if (! ("cache" in this))
-            this.cache = {};
-        this.cache[o.descriptor.id] = o.image_data;
+    if (o.src_area.left > 0 || o.src_area.top > 0) {
+        this.log_warn("FIXME: DrawCopy not shifting copies");
     }
 
-    if (Utils.DUMP_DRAWS && this.parent.dump_id)
-    {
-        var debug_canvas = document.createElement("canvas");
-        debug_canvas.setAttribute('width', o.image_data.width);
-        debug_canvas.setAttribute('height', o.image_data.height);
-        debug_canvas.setAttribute('id', o.tag + "." +
-            this.surfaces[o.base.surface_id].draw_count + "." +
-            o.base.surface_id + "@" + o.base.box.left + "x" +  o.base.box.top);
-        debug_canvas.getContext("2d").putImageData(o.image_data, 0, 0);
-        document.getElementById(this.parent.dump_id).appendChild(debug_canvas);
+    if (o.descriptor && (o.descriptor.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME)) {
+        this.cache = this.cache || new Map();
+        this.cache.set(o.descriptor.id, o.image_data);
     }
 
-    this.surfaces[o.base.surface_id].draw_count++;
+    if (Utils.DUMP_DRAWS && this.parent?.dump_id) {
+        const debugCanvas = document.createElement("canvas");
+        debugCanvas.width = o.image_data.width;
+        debugCanvas.height = o.image_data.height;
+        debugCanvas.id = `${o.tag}.${surface.draw_count}.${surfaceId}@${o.base.box.left}x${o.base.box.top}`;
+        
+        const debugCtx = debugCanvas.getContext("2d");
+        debugCtx.putImageData(o.image_data, 0, 0);
+        
+        const dumpContainer = document.getElementById(this.parent.dump_id);
+        dumpContainer?.appendChild(debugCanvas);
+    }
 
+    surface.draw_count++;
     return true;
-}
+};
 
 
 SpiceDisplayConn.prototype.log_draw = function(prefix, draw)
@@ -894,114 +909,143 @@ function handle_mouseout(e)
 }
 
 function handle_draw_jpeg_onload() {
-    var temp_canvas = null;
-    var context;
+    const o = this.o;
+    const sc = o?.sc;
+    const streams = sc?.streams;
 
-    if (this.o && this.o.sc && this.o.sc.streams && this.o.id && this.o.sc.streams[this.o.id]) {
-        this.o.sc.streams[this.o.id].frames_loading--;
+    if (o && streams && streams[o.id]) {
+        streams[o.id].frames_loading--;
     }
 
-    if (!this.o || !this.o.base || this.o.sc.surfaces[this.o.base.surface_id] === undefined) {
-        Utils.DEBUG > 2 && this.o.sc && this.o.sc.log_info && this.o.sc.log_info("Discarding jpeg; presumed lost surface " + (this.o.base ? this.o.base.surface_id : 'unknown surface id'));
-        temp_canvas = document.createElement("canvas");
-        temp_canvas.setAttribute('width', this.o.base ? this.o.base.box.right : 0);
-        temp_canvas.setAttribute('height', this.o.base ? this.o.base.box.bottom : 0);
-        context = temp_canvas.getContext("2d");
+    const surfaceId = o?.base?.surface_id;
+    const surface = sc?.surfaces?.[surfaceId];
+    let context = null;
+    let isSurfaceValid = false;
+
+    if (surface) {
+        context = surface.canvas?.context || null;
+        isSurfaceValid = !!context;
     } else {
-        context = this.o.sc.surfaces[this.o.base.surface_id].canvas.context;
+        Utils.DEBUG > 2 && sc?.log_info?.(`Discarding jpeg; presumed lost surface ${surfaceId || 'unknown'}`);
     }
+
+    const width = this.width;
+    const height = this.height;
+
+    const offscreenCanvas = new OffscreenCanvas(width, height);
+    const offscreenCtx = offscreenCanvas.getContext('2d');
+
+    offscreenCtx.drawImage(this, 0, 0);
 
     if (this.alpha_img) {
-        var c = document.createElement("canvas");
-        var t = c.getContext("2d");
-        c.setAttribute('width', this.alpha_img.width);
-        c.setAttribute('height', this.alpha_img.height);
-        t.putImageData(this.alpha_img, 0, 0);
-        t.globalCompositeOperation = 'source-in';
-        t.drawImage(this, 0, 0);
+        const maskCanvas = new OffscreenCanvas(this.alpha_img.width, this.alpha_img.height);
+        const maskCtx = maskCanvas.getContext('2d');
 
-        context.drawImage(c, this.o.base ? this.o.base.box.left : 0, this.o.base ? this.o.base.box.top : 0);
+        maskCtx.putImageData(this.alpha_img, 0, 0);
+        maskCtx.globalCompositeOperation = 'source-in';
+        maskCtx.drawImage(offscreenCanvas, 0, 0);
 
-        if (this.o.descriptor && (this.o.descriptor.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME)) {
-            if (!this.o.sc.cache) {
-                this.o.sc.cache = {};
-            }
-
-            this.o.sc.cache[this.o.descriptor.id] = t.getImageData(0, 0, this.alpha_img.width, this.alpha_img.height);
+        if (isSurfaceValid) {
+            context.drawImage(maskCanvas, o.base.box.left, o.base.box.top);
         }
-    } else {
-        context.drawImage(this, this.o.base ? this.o.base.box.left : 0, this.o.base ? this.o.base.box.top : 0);
-
-        this.onload = undefined;
-        this.src = Utils.EMPTY_GIF_IMAGE;
-
-        if (this.o.descriptor && (this.o.descriptor.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME)) {
-            if (!this.o.sc.cache) {
-                this.o.sc.cache = {};
-            }
-
-            this.o.sc.cache[this.o.descriptor.id] = context.getImageData(this.o.base.box.left, this.o.base.box.top,
-                this.o.base.box.right - this.o.base.box.left, this.o.base.box.bottom - this.o.base.box.top);
+    } 
+    else {
+        if (isSurfaceValid) {
+            context.drawImage(offscreenCanvas, o.base.box.left, o.base.box.top);
         }
     }
 
-    if (temp_canvas == null) {
-        if (Utils.DUMP_DRAWS && this.o.sc.parent && this.o.sc.parent.dump_id) {
-            var debug_canvas = document.createElement("canvas");
-            debug_canvas.setAttribute('id', this.o.tag + "." +
-                this.o.sc.surfaces[this.o.base.surface_id].draw_count + "." +
-                this.o.base.surface_id + "@" + this.o.base.box.left + "x" +  this.o.base.box.top);
-            debug_canvas.getContext("2d").drawImage(this, 0, 0);
-            document.getElementById(this.o.sc.parent.dump_id).appendChild(debug_canvas);
-        }
+    this.onload = undefined;
+    this.src = Utils.EMPTY_GIF_IMAGE;
 
-        this.o.sc.surfaces[this.o.base.surface_id].draw_count++;
+    if (o?.descriptor?.flags & Constants.SPICE_IMAGE_FLAGS_CACHE_ME) {
+        sc.cache = sc.cache || new Map();
+        const imageData = isSurfaceValid
+            ? context.getImageData(o.base.box.left, o.base.box.top, o.base.box.right - o.base.box.left, o.base.box.bottom - o.base.box.top)
+            : null;
+
+        if (imageData) {
+            sc.cache.set(o.descriptor.id, imageData);
+        }
     }
 
-    if (this.o.sc.streams && this.o.sc.streams[this.o.id] && this.o.sc.streams[this.o.id].report) {
-        process_stream_data_report(this.o.sc, this.o.id, this.o.msg_mmtime, this.o.msg_mmtime - this.o.sc.parent.relative_now());
+    if (Utils.DUMP_DRAWS && sc?.parent?.dump_id && isSurfaceValid) {
+        const debugCanvas = document.createElement('canvas');
+        debugCanvas.width = o.base.box.right - o.base.box.left;
+        debugCanvas.height = o.base.box.bottom - o.base.box.top;
+        debugCanvas.id = `${o.tag}.${surface.draw_count}.${surfaceId}@${o.base.box.left}x${o.base.box.top}`;
+
+        const debugCtx = debugCanvas.getContext('2d');
+        debugCtx.drawImage(isSurfaceValid ? offscreenCanvas : new Image(), 0, 0);
+
+        document.getElementById(sc.parent.dump_id)?.appendChild(debugCanvas);
+        surface.draw_count++;
+    }
+
+    if (sc?.streams?.[o?.id]?.report) {
+        process_stream_data_report(sc, o.id, o.msg_mmtime, o.msg_mmtime - sc.parent.relative_now());
     }
 }
 
 
-function process_mjpeg_stream_data(sc, m, time_until_due)
-{
-    /* If we are currently processing an mjpeg frame when a new one arrives,
-       and the new one is 'late', drop the new frame.  This helps the browsers
-       keep up, and provides rate control feedback as well */
-    if (time_until_due < 0 && sc.streams[m.base.id].frames_loading > 0)
-    {
-        if ("report" in sc.streams[m.base.id])
-            sc.streams[m.base.id].report.num_drops++;
+function process_mjpeg_stream_data(sc, m, time_until_due) {
+    const streamId = m.base.id;
+    const stream = sc.streams[streamId];
+
+    if (time_until_due < 0 && stream?.frames_loading > 0) {
+        if (stream.report) {
+            stream.report.num_drops++;
+        }
         return;
     }
 
-    var tmpstr = "data:image/jpeg,";
-    var img = new Image;
-    var i;
-    for (i = 0; i < m.data.length; i++)
-    {
-        tmpstr +=  '%';
-        if (m.data[i] < 16)
-        tmpstr += '0';
-        tmpstr += m.data[i].toString(16);
+    if (!m.data || m.data.length === 0) {
+        sc.log_err("Нет данных в MJPEG кадре");
+        return;
     }
-    var strm_base = new Messages.SpiceMsgDisplayBase();
-    strm_base.surface_id = sc.streams[m.base.id].surface_id;
-    strm_base.box = m.dest || sc.streams[m.base.id].dest;
-    strm_base.clip = sc.streams[m.base.id].clip;
-    img.o =
-        { base: strm_base,
-          tag: "mjpeg." + m.base.id,
-          descriptor: null,
-          sc : sc,
-          id : m.base.id,
-          msg_mmtime : m.base.multi_media_time,
-        };
-    img.onload = handle_draw_jpeg_onload;
-    img.src = tmpstr;
 
-    sc.streams[m.base.id].frames_loading++;
+    let imageDataArray = m.data;
+    if (typeof imageDataArray === 'string') {
+        const array = new Uint8Array(imageDataArray.length);
+        for (let i = 0; i < imageDataArray.length; i++) {
+            array[i] = imageDataArray.charCodeAt(i);
+        }
+        imageDataArray = array;
+    }
+
+    const blob = new Blob([imageDataArray], { type: 'image/jpeg' });
+
+    const strm_base = new Messages.SpiceMsgDisplayBase();
+    strm_base.surface_id = stream.surface_id;
+    strm_base.box = m.dest || stream.dest;
+    strm_base.clip = stream.clip;
+
+    const img = new Image();
+    img.o = {
+        base: strm_base,
+        tag: `mjpeg.${streamId}`,
+        descriptor: null,
+        sc,
+        id: streamId,
+        msg_mmtime: m.base.multi_media_time
+    };
+
+    img.onload = () => {
+        handle_draw_jpeg_onload.call(img);
+    };
+
+    img.onerror = () => {
+        sc.log_err("Ошибка загрузки MJPEG кадра");
+        if (stream) {
+            stream.frames_loading--;
+        }
+    };
+
+    img.src = URL.createObjectURL(blob);
+
+    if (stream) {
+        stream.frames_loading++;
+    }
 }
 
 function process_stream_data_report(sc, id, msg_mmtime, time_until_due)
