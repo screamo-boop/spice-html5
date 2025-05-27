@@ -160,6 +160,14 @@ const zeroLUT = new Uint8Array(256);
   }
 }
 
+const BPC_MAP = {
+  [Constants.QUIC_IMAGE_TYPE_GRAY]: 8,
+  [Constants.QUIC_IMAGE_TYPE_RGB16]: 5,
+  [Constants.QUIC_IMAGE_TYPE_RGB24]: 8,
+  [Constants.QUIC_IMAGE_TYPE_RGB32]: 8,
+  [Constants.QUIC_IMAGE_TYPE_RGBA]: 8
+};
+
 /* Helper Functions */
 
 function ceil_log_2(val)
@@ -214,24 +222,14 @@ function family_init(family, bpc, limit)
     }
 }
 
-function quic_image_bpc(type)
-{
-    switch (type) {
-    case Constants.QUIC_IMAGE_TYPE_GRAY:
-        return 8;
-    case Constants.QUIC_IMAGE_TYPE_RGB16:
-        return 5;
-    case Constants.QUIC_IMAGE_TYPE_RGB24:
-        return 8;
-    case Constants.QUIC_IMAGE_TYPE_RGB32:
-        return 8;
-    case Constants.QUIC_IMAGE_TYPE_RGBA:
-        return 8;
-    case Constants.QUIC_IMAGE_TYPE_INVALID:
-    default:
-        console.log("quic: bad image type\n");
-        return 0;
-    }
+
+
+function quic_image_bpc(type) {
+  const bpc = BPC_MAP[type];
+  if (bpc !== undefined) return bpc;
+  
+  console.log("quic: bad image type\n");
+  return 0;
 }
 
 function cnt_l_zeroes(bits)
