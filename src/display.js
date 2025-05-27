@@ -998,9 +998,8 @@ function process_mjpeg_stream_data(sc, m, time_until_due) {
     strm_base.surface_id = stream.surface_id;
     strm_base.box = m.dest || stream.dest;
     strm_base.clip = stream.clip;
-
     const surface = sc.surfaces[stream.surface_id];
-    const shouldFlip = surface?.format === Constants.SPICE_SURFACE_FMT_32_xRGB;
+    const shouldFlip = !stream.flags & 1; // 1 -- TOPDOWN FLAG
 
     const img = new Image();
     img.o = {
@@ -1010,7 +1009,7 @@ function process_mjpeg_stream_data(sc, m, time_until_due) {
         sc,
         id: streamId,
         msg_mmtime: m.base.multi_media_time,
-        flip: shouldFlip 
+        flip: shouldFlip,
     };
 
     img.onload = () => {
