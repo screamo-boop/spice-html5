@@ -27,33 +27,56 @@
 import { Constants } from './enums.js';
 
 function convert_spice_bitmap_to_web(context, spice_bitmap) {
-    if (spice_bitmap.format !== Constants.SPICE_BITMAP_FMT_32BIT && spice_bitmap.format !== Constants.SPICE_BITMAP_FMT_RGBA) {
-        return undefined;
+    if (spice_bitmap.format !== Constants.SPICE_BITMAP_FMT_32BIT && 
+        spice_bitmap.format !== Constants.SPICE_BITMAP_FMT_RGBA) {
+        return null;
     }
 
-    const u8 = new Uint8Array(spice_bitmap.data);
     const { x: width, y: height, stride, flags, format } = spice_bitmap;
-    const topDown = flags & Constants.SPICE_BITMAP_FLAGS_TOP_DOWN;
-    const src_dec = topDown ? 0 : 2 * stride;
-    let src_offset = topDown ? 0 : (height - 1) * stride;
-
+    const topDown = (flags & Constants.SPICE_BITMAP_FLAGS_TOP_DOWN) !== 0;
+    const pixelSize = 4;
     const ret = context.createImageData(width, height);
     const retData = ret.data;
-    const imageSize = width * height;
 
-    for (let offset = 0, rowIndex = 0; rowIndex < height; rowIndex++) {
-        for (let colIndex = 0; colIndex < width; colIndex++, offset += 4, src_offset += 4) {
-            retData[offset] = u8[src_offset + 2];
-            retData[offset + 1] = u8[src_offset + 1];
-            retData[offset + 2] = u8[src_offset];
-            retData[offset + 3] = (format === Constants.SPICE_BITMAP_FMT_32BIT) ? 255 : u8[src_offset];
+    let u8;
+    if (spice_bitmap.data instanceof ArrayBuffer || 
+        (typeof spice_bitmap.data === 'string' && spice_bitmap.data.length > 0)) {
+        if (typeof spice_bitmap.data === 'string') {
+            u8 = new Uint8Array(spice_bitmap.data.length);
+            for (let i = 0; i < spice_bitmap.data.length; i++) {
+                u8[i] = spice_bitmap.data.charCodeAt(i);
+            }
+        } else {
+            u8 = new Uint8Array(spice_bitmap.data);
         }
-        src_offset -= src_dec; // Adjust offset for next row
+    } else {
+        console.error("Incorrect data in SpiceBitmap", spice_bitmap);
+        return null;
+    }
+
+    const rowIndices = topDown 
+        ? [...Array(height).keys()] 
+        : [...Array(height).keys()].reverse();
+
+    for (let rowIndex = 0; rowIndex < height; rowIndex++) {
+        const srcRow = rowIndices[rowIndex];
+        const srcOffsetStart = srcRow * stride;
+        
+        for (let colIndex = 0; colIndex < width; colIndex++) {
+            const srcOffset = srcOffsetStart + colIndex * pixelSize;
+            const destOffset = (rowIndex * width + colIndex) * pixelSize;
+
+            retData[destOffset]     = u8[srcOffset + 2];      // R
+            retData[destOffset + 1] = u8[srcOffset + 1];      // G
+            retData[destOffset + 2] = u8[srcOffset];          // B
+            retData[destOffset + 3] = (format === Constants.SPICE_BITMAP_FMT_32BIT) 
+                ? 255 
+                : u8[srcOffset + 3];
+        }
     }
 
     return ret;
 }
-
 
 export {
   convert_spice_bitmap_to_web,
