@@ -1313,21 +1313,25 @@ SpiceQuic.prototype =
     },
 }
 
-function convert_spice_quic_to_web(context, spice_quic)
-{
-    var ret = context.createImageData(spice_quic.width, spice_quic.height);
-    var i;
-    for (i = 0; i < (ret.width * ret.height * 4); i+=4)
-    {
-        ret.data[i + 0] = spice_quic.outptr[i + 2];
-        ret.data[i + 1] = spice_quic.outptr[i + 1];
-        ret.data[i + 2] = spice_quic.outptr[i + 0];
-        if (spice_quic.type !== Constants.QUIC_IMAGE_TYPE_RGBA)
-            ret.data[i + 3] = 255;
-        else
-            ret.data[i + 3] = 255 - spice_quic.outptr[i + 3];
+function convert_spice_quic_to_web(context, spice_quic) {
+    const width = spice_quic.width;
+    const height = spice_quic.height;
+    const ret = context.createImageData(width, height);
+    const outptr = spice_quic.outptr;
+    const retData = ret.data;
+    
+    const pixelCount = width * height;
+    const isRGBA = spice_quic.type === Constants.QUIC_IMAGE_TYPE_RGBA;
+    
+    for (let i = 0, len = pixelCount * 4; i < len; i += 4) {
+        retData[i]     = outptr[i + 2]; // R
+        retData[i + 1] = outptr[i + 1]; // G
+        retData[i + 2] = outptr[i];     // B
+        
+        retData[i + 3] = isRGBA ? (255 - outptr[i + 3]) : 255;
     }
-   return ret;
+    
+    return ret;
 }
 
 /* Module initialization */
