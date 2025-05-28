@@ -29,6 +29,7 @@ const Constants = {
   QUIC_IMAGE_TYPE_RGB24 : 3,
   QUIC_IMAGE_TYPE_RGB32 : 4,
   QUIC_IMAGE_TYPE_RGBA : 5,
+  INIT_COUNTERS : 8,
 };
 
 const DEFevol = 3;
@@ -331,45 +332,47 @@ QuicModel.prototype = {
     levels :0
 }
 
-function QuicBucket()
-{
-    this.counters = [0,0,0,0,0,0,0,0];
+function QuicBucket() {
+    this.counters = new Uint32Array(8);
 }
 
 QuicBucket.prototype = {
     bestcode: 0,
 
-    reste : function (bpp)
-    {
+    reste: function(bpp) {
+        this.counters.fill(0);
         this.bestcode = bpp;
-        this.counters = [0,0,0,0,0,0,0,0];
     },
 
-    update_model_8bpc : function (state, curval, bpp)
-    {
-        var i;
-
-        var bestcode = bpp - 1;
-        var bestcodelen = (this.counters[bestcode] += golomb_code_len_8bpc(curval, bestcode));
-
-        for (i = bpp - 2; i >= 0; i--) {
-            var ithcodelen = (this.counters[i] += golomb_code_len_8bpc(curval, i));
-
-            if (ithcodelen < bestcodelen) {
+    update_model_8bpc: function(state, curval, bpp) {
+        const counters = this.counters;
+        
+        let bestcode = bpp - 1;
+        let bestcodelen = counters[bestcode] += golomb_code_len_8bpc(curval, bestcode);
+        
+        for (let i = bpp - 2; i >= 0; i--) {
+            const codelen = counters[i] += golomb_code_len_8bpc(curval, i);
+            if (codelen < bestcodelen) {
                 bestcode = i;
-                bestcodelen = ithcodelen;
+                bestcodelen = codelen;
             }
         }
-
+        
         this.bestcode = bestcode;
-
+        
         if (bestcodelen > state.wm_trigger) {
-            for (i = 0; i < bpp; i++) {
-                this.counters[i] = this.counters[i] >>> 1;
+            if (typeof SIMD !== "undefined") {
+                const vec = SIMD.Uint32x4.load(counters, 0);
+                const shifted = SIMD.Uint32x4.shiftRightByVector(vec, 1);
+                SIMD.Uint32x4.store(counters, 0, shifted);
+            } else {
+                for (let i = 0; i < bpp; i++) {
+                    counters[i] >>>= 1;
+                }
             }
         }
     }
-}
+};
 
 function QuicFamilyStat()
 {
