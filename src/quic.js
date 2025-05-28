@@ -245,23 +245,21 @@ function cnt_l_zeroes(bits)
     }
 }
 
-function golomb_decoding_8bpc(l, bits)
-{
-    var rc;
-    var cwlen;
-
-    if (bits < 0 || bits > family_8bpc.notGRprefixmask[l])
-    {
-        var zeroprefix = cnt_l_zeroes(bits);
-        cwlen = zeroprefix + 1 + l;
-        rc = (zeroprefix << l) | (bits >> (32-cwlen)) & bppmask[l];
+function golomb_decoding_8bpc(l, bits) {
+    const clz32 = (x) => x ? Math.clz32(x) : 32;
+    
+    if ((bits | 0) >= 0 && bits <= family_8bpc.notGRprefixmask[l]) {
+        const cwlen = family_8bpc.notGRcwlen[l];
+        const suffix = (bits >> (32 - cwlen)) & bppmask[family_8bpc.notGRsuffixlen[l]];
+        return { codewordlen: cwlen, rc: family_8bpc.nGRcodewords[l] + suffix };
     }
-    else
-    {
-        cwlen = family_8bpc.notGRcwlen[l];
-        rc = family_8bpc.nGRcodewords[l] + ((bits >> (32-cwlen)) & bppmask[family_8bpc.notGRsuffixlen[l]]);
-    }
-    return {'codewordlen':cwlen, 'rc':rc};
+    
+    const zeroprefix = clz32(bits);
+    const cwlen = zeroprefix + 1 + l;
+    const suffix = (bits >> (32 - cwlen)) & bppmask[l];
+    const rc = (zeroprefix << l) | suffix;
+    
+    return { codewordlen: cwlen, rc };
 }
 
 function golomb_code_len_8bpc(n, l)
