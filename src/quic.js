@@ -421,47 +421,60 @@ QuicFamilyStat.prototype = {
     }
 }
 
-function QuicChannel(model_8bpc, model_5bpc)
-{
-    this.state = new CommonState;
-    this.family_stat_8bpc = new QuicFamilyStat;
-    this.family_stat_5bpc = new QuicFamilyStat;
-    this.correlate_row = { zero: 0 , row:[] };
+function QuicChannel(model_8bpc, model_5bpc) {
+    this.state = new CommonState();
     this.model_8bpc = model_8bpc;
     this.model_5bpc = model_5bpc;
+    
+    this.family_stat_8bpc = new QuicFamilyStat();
+    this.family_stat_5bpc = new QuicFamilyStat();
+    
+    this.correlate_row = { 
+        zero: 0,
+        row: new Array(2048)
+    };
     this.buckets_ptrs = [];
 
-    if (!this.family_stat_8bpc.fill_model_structures(this.model_8bpc))
+    if (!this.family_stat_8bpc.fill_model_structures(model_8bpc)) {
+        console.error("Failed to initialize 8bpc model");
         return undefined;
-
-    if (!this.family_stat_5bpc.fill_model_structures(this.model_5bpc))
+    }
+    
+    if (!this.family_stat_5bpc.fill_model_structures(model_5bpc)) {
+        console.error("Failed to initialize 5bpc model");
         return undefined;
+    }
 }
 
 QuicChannel.prototype = {
-
-    reste : function (bpc)
-    {
-        var j;
-        this.correlate_row = { zero: 0 , row: []};
-
-        if (bpc == 8) {
-            for (j = 0; j < this.model_8bpc.n_buckets; j++)
-                this.family_stat_8bpc.buckets_buf[j].reste(7);
-            this.buckets_ptrs = this.family_stat_8bpc.buckets_ptrs;
-        } else if (bpc == 5) {
-            for (j = 0; j < this.model_5bpc.n_buckets; j++)
-                this.family_stat_8bpc.buckets_buf[j].reste(4);
-            this.buckets_ptrs = this.family_stat_5bpc.buckets_ptrs;
-        } else {
-            console.log("quic: %s: bad bpc %d\n", __FUNCTION__, bpc);
+    reste(bpc) {
+        if (bpc !== 5 && bpc !== 8) {
+            console.warn(`quic: ${this.reste.name}: bad bpc ${bpc}`);
             return false;
         }
 
+        this.correlate_row.zero = 0;
+        this.correlate_row.row.fill(0);
+
+        const family = bpc === 8 ? this.family_stat_8bpc : this.family_stat_5bpc;
+        const model = bpc === 8 ? this.model_8bpc : this.model_5bpc;
+        
+        if (bpc === 8) {
+            for (let j = 0; j < model.n_buckets; j++) {
+                family.buckets_buf[j]?.reste(7);
+            }
+        } else {
+            for (let j = 0; j < model.n_buckets; j++) {
+                family.buckets_buf[j]?.reste(4);
+            }
+        }
+        
+        this.buckets_ptrs = family.buckets_ptrs;
+        
         this.state.reste();
         return true;
     }
-}
+};
 
 function CommonState()
 {
