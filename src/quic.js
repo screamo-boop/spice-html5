@@ -262,13 +262,11 @@ function golomb_decoding_8bpc(l, bits) {
     return { codewordlen: cwlen, rc };
 }
 
-function golomb_code_len_8bpc(n, l)
-{
-    if (n < family_8bpc.nGRcodewords[l]) {
-        return (n >>> l) + 1 + l;
-    } else {
-        return family_8bpc.notGRcwlen[l];
-    }
+function golomb_code_len_8bpc(n, l) {
+    const nGR = family_8bpc.nGRcodewords[l];
+    return n < nGR 
+        ? (n >>> l) + 1 + l 
+        : family_8bpc.notGRcwlen[l];
 }
 
 function QuicModel(bpc)
