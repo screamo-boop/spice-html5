@@ -232,19 +232,6 @@ function quic_image_bpc(type) {
   return 0;
 }
 
-function cnt_l_zeroes(bits)
-{
-    if (bits & 0xff800000) {
-        return lzeroes[bits >>> 24];
-    } else if (bits & 0xffff8000) {
-        return 8 + lzeroes[(bits >>> 16) & 0x000000ff];
-    } else if (bits & 0xffffff80) {
-        return 16 + lzeroes[(bits >>> 8) & 0x000000ff];
-    } else {
-        return 24 + lzeroes[bits & 0x000000ff];
-    }
-}
-
 function golomb_decoding_8bpc(l, bits) {
     const clz32 = (x) => x ? Math.clz32(x) : 32;
     
