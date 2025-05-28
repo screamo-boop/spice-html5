@@ -1335,31 +1335,19 @@ function convert_spice_quic_to_web(context, spice_quic) {
 }
 
 /* Module initialization */
-if (need_init)
-{
+if (need_init) {
     need_init = false;
-
     family_init(family_8bpc, 8, DEFmaxclen);
     family_init(family_5bpc, 5, DEFmaxclen);
-    /* init_zeroLUT */
-    var i, j, k, l;
-
-    j = k = 1;
-    l = 8;
-    for (i = 0; i < 256; ++i) {
-        zeroLUT[i] = l;
-        --k;
-        if (k == 0) {
-            k = j;
-            --l;
-            j *= 2;
-        }
+    
+    for (let i = 0; i < 256; i++) {
+        zeroLUT[i] = Math.clz32(i) - 24;
     }
-
-    encoder = new QuicEncoder;
-
-    if (!encoder)
-        throw("quic: failed to create encoder");
+    
+    encoder = new QuicEncoder();
+    if (!encoder) {
+        throw new Error("quic: failed to create encoder");
+    }
 }
 
 export {
