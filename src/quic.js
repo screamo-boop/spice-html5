@@ -30,6 +30,7 @@ const Constants = {
   QUIC_IMAGE_TYPE_RGB32 : 4,
   QUIC_IMAGE_TYPE_RGBA : 5,
   INIT_COUNTERS : 8,
+  MAX_WMIDX : 10,
 };
 
 const DEFevol = 3;
@@ -476,50 +477,42 @@ QuicChannel.prototype = {
     }
 };
 
-function CommonState()
-{
+const WM_DIV_EPOL = Math.floor(evol / 2)
+const J0 = J[0]
+
+
+function CommonState() {
+    this.waitcnt = 0;
+    this.tabrand_seed = 0xff;
+    this.wm_trigger = besttrigtab[WM_DIV_EPOL][0];
+    this.wmidx = 0;
+    this.wmileft = wminext;
+    this.melcstate = 0;
+    this.melclen = J0;
+    this.melcorder = 1 << J0;
 }
 
 CommonState.prototype = {
-    waitcnt: 0,
-    tabrand_seed: 0xff,
-    wm_trigger: 0,
-    wmidx: 0,
-    wmileft: wminext,
-    melcstate: 0,
-    melclen: 0,
-    melcorder: 0,
-
-    set_wm_trigger : function()
-    {
-        var wm = this.wmidx;
-        if (wm > 10) {
-            wm = 10;
-        }
-
-        this.wm_trigger = besttrigtab[Math.floor(evol / 2)][wm];
+    set_wm_trigger() {
+        const wm = Math.min(this.wmidx, Constants.MAX_WMIDX);
+        this.wm_trigger = besttrigtab[WM_DIV_EPOL][wm];
     },
-
-    reste : function()
-    {
+    
+    reste() {
         this.waitcnt = 0;
-        this.tabrand_seed = 0x0ff;
+        this.tabrand_seed = 0xff;
         this.wmidx = 0;
         this.wmileft = wminext;
-
-        this.set_wm_trigger();
-
         this.melcstate = 0;
-        this.melclen = J[0];
-        this.melcorder = 1 << this.melclen;
+        this.melclen = J0;
+        this.melcorder = 1 << J0;
+        this.set_wm_trigger();
     },
-
-    tabrand : function()
-    {
-        this.tabrand_seed++;
-        return tabrand_chaos[this.tabrand_seed & 0x0ff];
+    
+    tabrand() {
+        return tabrand_chaos[++this.tabrand_seed & 0xff];
     }
-}
+};
 
 
 function QuicEncoder()
