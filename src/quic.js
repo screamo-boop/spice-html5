@@ -31,6 +31,8 @@ const Constants = {
   QUIC_IMAGE_TYPE_RGBA : 5,
   INIT_COUNTERS : 8,
   MAX_WMIDX : 10,
+  QUIC_MAGIC : 0x43495551,
+  DEFAULT_VERSION : 0x00000000,
 };
 
 const DEFevol = 3;
@@ -515,132 +517,116 @@ CommonState.prototype = {
 };
 
 
-function QuicEncoder()
-{
-    this.rgb_state = new CommonState;
+function QuicEncoder() {
+    this.rgb_state = new CommonState();
     this.model_8bpc = new QuicModel(8);
     this.model_5bpc = new QuicModel(5);
-    this.channels = [];
-
-    var i;
-    for (i = 0; i < 4; i++) {
+    this.channels = new Array(4);
+    
+    for (let i = 0; i < 4; i++) {
         this.channels[i] = new QuicChannel(this.model_8bpc, this.model_5bpc);
-        if (!this.channels[i])
-        {
-            console.log("quic: failed to create channel");
+        if (!this.channels[i]) {
+            console.error(`quic: failed to create channel ${i}`);
             return undefined;
         }
     }
 }
 
 QuicEncoder.prototype = {
-                    type: 0,
-                    width: 0,
-                    height: 0,
-                    io_idx: 0,
-                    io_available_bits: 0,
-                    io_word: 0,
-                    io_next_word: 0,
-                    io_now: 0,
-                    io_end: 0,
-                    rows_completed: 0,
-              };
+    type: 0 | 0,
+    width: 0 | 0,
+    height: 0 | 0,
+    io_idx: 0 | 0,
+    io_available_bits: 0 | 0,
+    io_word: 0 | 0,
+    io_next_word: 0 | 0,
+    io_now: null,
+    io_end: 0 | 0,
+    rows_completed: 0 | 0,
 
-QuicEncoder.prototype.reste = function(io_ptr)
-{
-    this.rgb_state.reste();
+    reste(io_ptr) {
+        this.rgb_state.reste();
+        this.io_now = io_ptr;
+        this.io_end = io_ptr.length;
+        this.io_idx = 0 | 0;
+        this.rows_completed = 0 | 0;
+        return true;
+    },
 
-    this.io_now = io_ptr;
-    this.io_end = this.io_now.length;
-    this.io_idx = 0;
-    this.rows_completed = 0;
-    return true;
-}
+    read_io_word() {
+        if (this.io_idx >= this.io_end) {
+            throw "quic: out of data";
+        }
+        this.io_next_word = (
+            this.io_now[this.io_idx++] |
+            this.io_now[this.io_idx++] << 8 |
+            this.io_now[this.io_idx++] << 16 |
+            this.io_now[this.io_idx++] << 24
+        );
+    },
 
-QuicEncoder.prototype.read_io_word = function()
-{
-    if (this.io_idx >= this.io_end)
-        throw("quic: out of data");
-    this.io_next_word = this.io_now[this.io_idx++] | this.io_now[this.io_idx++]<<8 | this.io_now[this.io_idx++]<<16 | this.io_now[this.io_idx++]<<24;
-}
+    decode_eatbits(len) {
+        this.io_word = this.io_word << len;
+        const delta = this.io_available_bits - len;
+        
+        if (delta >= 0) {
+            this.io_available_bits = delta;
+            this.io_word |= this.io_next_word >>> this.io_available_bits;
+        } else {
+            const shift = -delta;
+            this.io_word |= this.io_next_word << shift;
+            this.read_io_word();
+            this.io_available_bits = 32 - shift;
+            this.io_word |= this.io_next_word >>> this.io_available_bits;
+        }
+    },
 
-QuicEncoder.prototype.decode_eatbits = function (len)
-{
-    this.io_word = this.io_word << len;
+    decode_eat32bits() {
+        this.decode_eatbits(16);
+        this.decode_eatbits(16);
+    },
 
-    var delta = (this.io_available_bits - len);
-    if (delta >= 0)
-    {
-        this.io_available_bits = delta;
-        this.io_word |= this.io_next_word >>> this.io_available_bits;
-    }
-    else
-    {
-        delta = -1 * delta;
-        this.io_word |= this.io_next_word << delta;
+    reste_channels(bpc) {
+        for (const channel of this.channels) {
+            if (!channel?.reste(bpc)) return false;
+        }
+        return true;
+    },
+
+    quic_decode_begin(io_ptr) {
+        if (!this.reste(io_ptr)) return false;
         this.read_io_word();
-        this.io_available_bits = 32 - delta;
-        this.io_word |= this.io_next_word >>> this.io_available_bits;
-    }
-}
+        this.io_word = this.io_next_word;
+        this.io_available_bits = 0;
 
-QuicEncoder.prototype.decode_eat32bits = function()
-{
-    this.decode_eatbits(16);
-    this.decode_eatbits(16);
-}
-
-QuicEncoder.prototype.reste_channels = function(bpc)
-{
-    var i;
-
-    for (i = 0; i < 4; i++)
-        if (!this.channels[i].reste(bpc))
+        const magic = this.io_word;
+        this.decode_eat32bits();
+        
+        if (magic !== Constants.QUIC_MAGIC) {
+            console.error("quic: bad magic", magic.toString(16));
             return false;
-    return true;
-}
+        }
 
-QuicEncoder.prototype.quic_decode_begin = function(io_ptr)
-{
-    if (!this.reste(io_ptr)) {
-        return false;
+        const version = this.io_word;
+        this.decode_eat32bits();
+        
+        if (version !== Constants.DEFAULT_VERSION) {
+            console.error("quic: bad version", version.toString(16));
+            return false;
+        }
+
+        this.type = this.io_word;
+        this.decode_eat32bits();
+        this.width = this.io_word;
+        this.decode_eat32bits();
+        this.height = this.io_word;
+        this.decode_eat32bits();
+
+        const bpc = quic_image_bpc(this.type);
+        return this.reste_channels(bpc);
     }
+};
 
-    this.io_idx = 0;
-    this.io_next_word = this.io_now[this.io_idx++] | this.io_now[this.io_idx++]<<8 | this.io_now[this.io_idx++]<<16 | this.io_now[this.io_idx++]<<24;
-    this.io_word = this.io_next_word;
-    this.io_available_bits = 0;
-
-    var magic = this.io_word;
-    this.decode_eat32bits();
-    if (magic != 0x43495551) /*QUIC*/ {
-        console.log("quic: bad magic "+magic.toString(16));
-        return false;
-    }
-
-    var version = this.io_word;
-    this.decode_eat32bits();
-    if (version != ((0 << 16) | (0 & 0xffff))) {
-        console.log("quic: bad version "+version.toString(16));
-        return false;
-    }
-
-    this.type = this.io_word;
-    this.decode_eat32bits();
-
-    this.width = this.io_word;
-    this.decode_eat32bits();
-
-    this.height = this.io_word;
-    this.decode_eat32bits();
-
-    var bpc = quic_image_bpc(this.type);
-
-    if (!this.reste_channels(bpc))
-        return false;
-
-    return true;
-}
 
 QuicEncoder.prototype.quic_rgb32_uncompress_row0_seg = function (i, cur_row, end,
                                        waitmask, bpc, bpc_mask)
