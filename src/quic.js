@@ -262,67 +262,55 @@ function golomb_code_len_8bpc(n, l) {
 
 function QuicModel(bpc)
 {
-    var bstart;
-    var bend = 0;
+    const EVOL_CONFIG = {
+        1: { repfirst: 3, firstsize: 1, repnext: 2, mulsize: 2 },
+        3: { repfirst: 1, firstsize: 1, repnext: 1, mulsize: 2 },
+        5: { repfirst: 1, firstsize: 1, repnext: 1, mulsize: 4 }
+    };
 
-    this.levels = 0x1 << bpc;
+    this.levels = 1 << bpc;
     this.n_buckets_ptrs = 0;
 
-    switch (evol) {
-        case 1:
-            this.repfirst = 3;
-            this.firstsize = 1;
-            this.repnext = 2;
-            this.mulsize = 2;
-            break;
-        case 3:
-            this.repfirst = 1;
-            this.firstsize = 1;
-            this.repnext = 1;
-            this.mulsize = 2;
-            break;
-        case 5:
-            this.repfirst = 1;
-            this.firstsize = 1;
-            this.repnext = 1;
-            this.mulsize = 4;
-            break;
-        case 0:
-        case 2:
-        case 4:
-            console.log("quic: findmodelparams(): evol value obsolete!!!\n");
-            break;
-        default:
-            console.log("quic: findmodelparams(): evol out of range!!!\n");
+    const config = EVOL_CONFIG[evol] || {};
+    this.repfirst = config.repfirst !== undefined ? config.repfirst : 0;
+    this.firstsize = config.firstsize !== undefined ? config.firstsize : 0;
+    this.repnext = config.repnext !== undefined ? config.repnext : 0;
+    this.mulsize = config.mulsize !== undefined ? config.mulsize : 0;
+
+    if (evol === 0 || evol === 2 || evol === 4) {
+        console.warn("quic: findmodelparams(): evol value obsolete!!!");
+    } else if (!(evol in EVOL_CONFIG)) {
+        console.error("quic: findmodelparams(): evol out of range!!!");
     }
 
+    let repcntr = this.repfirst + 1;
+    let bsize = this.firstsize;
+    let bend = 0;
+    let bstart;
     this.n_buckets = 0;
-    var repcntr = this.repfirst + 1;
-    var bsize = this.firstsize;
+
+    const needSetPtrs = !this.n_buckets_ptrs;
+    const levelLimit = this.levels - 1;
 
     do {
-        if (this.n_buckets) {
-            bstart = bend + 1;
-        } else {
-            bstart = 0;
-        }
+        bstart = this.n_buckets ? bend + 1 : 0;
 
-        if (!--repcntr) {
+        if (--repcntr === 0) {
             repcntr = this.repnext;
             bsize *= this.mulsize;
         }
 
         bend = bstart + bsize - 1;
         if (bend + bsize >= this.levels) {
-            bend = this.levels - 1;
+            bend = levelLimit;
         }
 
-        if (!this.n_buckets_ptrs) {
+        if (needSetPtrs && !this.n_buckets_ptrs) {
             this.n_buckets_ptrs = this.levels;
         }
 
-        (this.n_buckets)++;
-    } while (bend < this.levels - 1);
+        this.n_buckets++;
+    } while (bend < levelLimit);
 }
 
 QuicModel.prototype = {
@@ -332,8 +320,8 @@ QuicModel.prototype = {
     firstsize : 0,
     repnext : 0,
     mulsize : 0,
-    levels :0
-}
+    levels : 0
+};
 
 function QuicBucket() {
     this.counters = new Uint32Array(8);
