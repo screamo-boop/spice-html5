@@ -58,13 +58,13 @@ function stripAlpha(imageData) {
 function SpiceDisplayConn()
 {
     SpiceConn.apply(this, arguments);
+    this.palettes = {}
 }
 
 SpiceDisplayConn.prototype = Object.create(SpiceConn.prototype);
 SpiceDisplayConn.prototype.process_channel_message = function(msg)
 {
     if ([Constants.SPICE_MSG_DISPLAY_MODE, Constants.SPICE_MSG_DISPLAY_MARK].includes(msg.type)) {
-        this.known_unimplemented(msg.type, msg.type === Constants.SPICE_MSG_DISPLAY_MODE ? "Display Mode" : "Display Mark");
         return true;
     }
 
@@ -486,7 +486,7 @@ if (msg.type === Constants.SPICE_MSG_DISPLAY_DRAW_FILL) {
 
     if (msg.type == Constants.SPICE_MSG_DISPLAY_INVAL_ALL_PALETTES)
     {
-        this.known_unimplemented(msg.type, "Inval All Palettes");
+        this.palettes = {}
         return true;
     }
 
