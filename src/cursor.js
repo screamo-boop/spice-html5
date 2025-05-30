@@ -61,6 +61,10 @@ class SpiceCursorConn extends SpiceConn {
         }
     }
 
+    align(value, alignment) {
+        return (value + alignment - 1) & ~(alignment - 1);
+    }
+
     handleCursorInit(msg) {
         const cursor_init = new SpiceMsgCursorInit(msg.data);
         DEBUG > 1 && console.log("SpiceMsgCursorInit");
@@ -74,27 +78,98 @@ class SpiceCursorConn extends SpiceConn {
         return true;
     }
 
-    handleCursorSet(msg) {
-        const cursor_set = new SpiceMsgCursorSet(msg.data);
-        DEBUG > 1 && console.log("SpiceMsgCursorSet");
+	mono_image_to_data(bytes, width, height) {
+        const monoMask = [1, 2, 4, 8, 16, 32, 64, 128]
+		let stride = this.align(width, 8) >>> 3;
+		let length = bytes.length;
+		let half = length / 2;
 
-        if (cursor_set.flags & Constants.SPICE_CURSOR_FLAGS_NONE) {
-            this.setCursorStyle("none");
-            return true;
-        }
+		const canvas = document.createElement('canvas');
+		const context = canvas.getContext('2d');
 
-        if (cursor_set.flags > 0) {
-            this.log_warn(`FIXME: No support for cursor flags ${cursor_set.flags}`);
-        }
+		let result = context.createImageData(width, height);
 
-        if (cursor_set.cursor.header.type !== Constants.SPICE_CURSOR_TYPE_ALPHA) {
-            this.log_warn(`FIXME: No support for cursor type ${cursor_set.cursor.header.type}`);
-            return false;
-        }
+		let andMask = [];
+		let xorMask = [];
 
-        this.set_cursor(cursor_set.cursor);
+		for (let i = 0; i < length; i++) {
+			let currentByte = bytes[i];
+		    let bitsLeft = 8;
+
+			if (i >= half) {
+				while (bitsLeft--) {
+					let bit = (currentByte & monoMask[bitsLeft]) && true;
+					andMask.push(bit);
+				}
+			} else if (i < half) {
+				while (bitsLeft--) {
+					let bit = (currentByte & monoMask[bitsLeft]) && true;
+					xorMask.push(bit);
+				}
+			}
+		}
+
+		let pos = 0;
+		half = xorMask.length;
+
+		for (let i = 0; i < half; i++) {
+			pos = i * 4;
+			if (!andMask[i] && !xorMask[i]) {
+				result.data[pos] = 0;
+				result.data[pos + 1] = 0;
+				result.data[pos + 2] = 0;
+				result.data[pos + 3] = 255;
+			} else if (!andMask[i] && xorMask[i]) {
+				result.data[pos] = 255;
+				result.data[pos + 1] = 255;
+				result.data[pos + 2] = 255;
+				result.data[pos + 3] = 0;
+			} else if (andMask[i] && !xorMask[i]) {
+				result.data[pos] = 255;
+				result.data[pos + 1] = 255;
+				result.data[pos + 2] = 255;
+				result.data[pos + 3] = 255;
+			} else if (andMask[i] && xorMask[i]) {
+				result.data[pos] = 0;
+				result.data[pos + 1] = 0;
+				result.data[pos + 2] = 0;
+				result.data[pos + 3] = 255;
+			}
+		}
+		return result;
+	}
+
+
+
+
+handleCursorSet(msg) {
+    const cursor_set = new SpiceMsgCursorSet(msg.data);
+    DEBUG > 1 && console.log("SpiceMsgCursorSet");
+
+    if (cursor_set.flags & Constants.SPICE_CURSOR_FLAGS_NONE) {
+        this.setCursorStyle("none");
         return true;
     }
+
+    if (cursor_set.flags > 0) {
+        this.log_warn(`FIXME: No support for cursor flags ${cursor_set.flags}`);
+    }
+
+    const cursor = cursor_set.cursor;
+    const { width, height, hot_spot_x, hot_spot_y } = cursor.header;
+
+    if (cursor.header.type === Constants.SPICE_CURSOR_TYPE_ALPHA) {
+        this.set_cursor(cursor);
+    } else if (cursor.header.type === Constants.SPICE_CURSOR_TYPE_MONO) {
+        this.set_cursor_mono(cursor);
+    } else {
+        this.log_warn(`Unsupported cursor type: ${cursor.header.type}`);
+    }
+
+    return true;
+}
+
+
 
     hideCursor() {
         DEBUG > 1 && console.log("SpiceMsgCursorHide");
@@ -120,6 +195,30 @@ class SpiceCursorConn extends SpiceConn {
         const screen = document.getElementById(this.parent.screen_id);
 
         screen.style.cursor = 'auto';
+        screen.style.cursor = curstr;
+
+        if (window.getComputedStyle(screen).cursor === 'auto') {
+            SpiceSimulateCursor.simulate_cursor(this, cursor, screen, pngstr);
+        }
+    }
+
+    set_cursor_mono(cursor) {
+        const { width, height, hot_spot_x, hot_spot_y } = cursor.header;
+        
+        const monoData = new Uint8Array(cursor.data);
+        const imageData = this.mono_image_to_data(monoData, width, height);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.putImageData(imageData, 0, 0);
+
+        const pngstr = canvas.toDataURL("image/png");
+
+        const curstr = `url(${pngstr}) ${hot_spot_x} ${hot_spot_y}, auto`;
+
+        const screen = document.getElementById(this.parent.screen_id);
         screen.style.cursor = curstr;
 
         if (window.getComputedStyle(screen).cursor === 'auto') {
