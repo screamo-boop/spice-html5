@@ -57,6 +57,8 @@ function stripAlpha(imageData) {
 **--------------------------------------------------------------------------*/
 function SpiceDisplayConn()
 {
+    this.debugWindow = null;
+    this.debugContainer = null;
     SpiceConn.apply(this, arguments);
     this.palettes = {}
 }
@@ -360,18 +362,19 @@ if (msg.type === Constants.SPICE_MSG_DISPLAY_DRAW_FILL) {
         context.fillStyle = colorStr;
         context.fillRect(left, top, width, height);
 
-        if (Utils.DUMP_DRAWS && this.parent?.dump_id) {
-            const debugCanvas = document.createElement('canvas');
-            debugCanvas.width = surface.canvas.width;
-            debugCanvas.height = surface.canvas.height;
-            debugCanvas.id = `fillbrush.${surfaceId}.${surface.draw_count}`;
-            
-            const debugCtx = debugCanvas.getContext('2d');
-            debugCtx.fillStyle = colorStr;
-            debugCtx.fillRect(left, top, width, height);
-            
-            document.getElementById(this.parent.dump_id)?.appendChild(debugCanvas);
-        }
+    if (Utils.DUMP_DRAWS && this.parent.dump_id) {
+        this.getDebugContainer();
+        const info = `Fill Brush Surface ${surfaceId} Draw ${surface.draw_count}`;
+        const debugWrapper = this.createDebugCanvas({
+            width: surface.canvas.width,
+            height: surface.canvas.height,
+            id: `fillbrush.${surfaceId}.${surface.draw_count}`,
+            imageData: debugCtx.getImageData(0, 0, width, height),
+            info: info
+        });
+        
+        this.getDebugContainer().appendChild(debugWrapper);
+    }
 
         surface.draw_count++;
     } 
@@ -457,14 +460,18 @@ if (msg.type === Constants.SPICE_MSG_DISPLAY_DRAW_FILL) {
         //source_context.putImageData(source_img, copy_bits.base.box.left, copy_bits.base.box.top);
         putImageDataWithAlpha(source_context, source_img, copy_bits.base.box.left, copy_bits.base.box.top);
 
-        if (Utils.DUMP_DRAWS && this.parent.dump_id)
-        {
-            var debug_canvas = document.createElement("canvas");
-            debug_canvas.setAttribute('width', width);
-            debug_canvas.setAttribute('height', height);
-            debug_canvas.setAttribute('id', "copybits" + copy_bits.base.surface_id + "." + this.surfaces[copy_bits.base.surface_id].draw_count);
-            debug_canvas.getContext("2d").putImageData(source_img, 0, 0);
-            document.getElementById(this.parent.dump_id).appendChild(debug_canvas);
+        if (Utils.DUMP_DRAWS && this.parent.dump_id) {
+            this.getDebugContainer();
+            const info = `CopyBits Surface ${copy_bits.base.surface_id} Draw ${this.surfaces[copy_bits.base.surface_id].draw_count}`;
+            const debugWrapper = this.createDebugCanvas({
+                width: width,
+                height: height,
+                id: `copybits.${copy_bits.base.surface_id}.${this.surfaces[copy_bits.base.surface_id].draw_count}`,
+                imageData: source_img,
+                info: info
+            });
+            
+            this.getDebugContainer().appendChild(debugWrapper);
         }
 
 
@@ -750,16 +757,17 @@ SpiceDisplayConn.prototype.draw_copy_helper = function(o) {
     }
 
     if (Utils.DUMP_DRAWS && this.parent?.dump_id) {
-        const debugCanvas = document.createElement("canvas");
-        debugCanvas.width = o.image_data.width;
-        debugCanvas.height = o.image_data.height;
-        debugCanvas.id = `${o.tag}.${surface.draw_count}.${surfaceId}@${o.base.box.left}x${o.base.box.top}`;
+        this.getDebugContainer();
+        const info = `Surface ${surfaceId} Draw ${surface.draw_count}: ${o.tag}`;
+        const debugWrapper = this.createDebugCanvas({
+            width: o.image_data.width,
+            height: o.image_data.height,
+            id: `${o.tag}.${surface.draw_count}.${surfaceId}@${o.base.box.left}x${o.base.box.top}`,
+            imageData: o.image_data,
+            info: info
+        });
         
-        const debugCtx = debugCanvas.getContext("2d");
-        debugCtx.putImageData(o.image_data, 0, 0);
-        
-        const dumpContainer = document.getElementById(this.parent.dump_id);
-        dumpContainer?.appendChild(debugCanvas);
+        this.getDebugContainer().appendChild(debugWrapper);
     }
 
     surface.draw_count++;
@@ -887,8 +895,171 @@ SpiceDisplayConn.prototype.destroy_surfaces = function()
     }
 
     this.surfaces = undefined;
+    if (this.debugWindow && !this.debugWindow.closed) {
+        this.debugWindow.close();
+    }
+    this.debugWindow = null;
+    this.debugContainer = null;
 }
 
+SpiceDisplayConn.prototype.getDebugContainer = function() {
+    if (!this.debugWindow || this.debugWindow.closed) {
+        this.debugWindow = window.open('', 'SpiceDisplayDebug', 'width=1200,height=800,scrollbars=yes');
+        this.debugWindow.document.title = 'Spice Display Debug';
+        
+        const style = this.debugWindow.document.createElement('style');
+        style.textContent = `
+            body { font-family: Arial, sans-serif; padding: 10px; margin: 0; }
+            #debug-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+            .debug-canvas { border: 1px solid #ccc; padding: 5px; background: #f9f9f9; }
+            .canvas-info { font-size: 12px; color: #666; margin-bottom: 5px; }
+        `;
+        this.debugWindow.document.head.appendChild(style);
+
+        this.debugContainer = this.debugWindow.document.createElement('div');
+        this.debugContainer.id = 'debug-container';
+        this.debugContainer.style.overflowY = 'auto';
+        this.debugContainer.style.maxHeight = 'calc(100vh - 100px)';
+        this.debugContainer.style.width = '100%';
+        this.debugContainer.style.boxSizing = 'border-box';
+        this.debugWindow.document.body.appendChild(this.debugContainer);
+
+        const clearBtn = this.debugWindow.document.createElement('button');
+        clearBtn.textContent = 'Clear All';
+        clearBtn.style.position = 'fixed';
+        clearBtn.style.top = '10px';
+        clearBtn.style.right = '10px';
+        clearBtn.style.zIndex = '1000';
+        clearBtn.style.padding = '6px 12px';
+        clearBtn.style.backgroundColor = '#ff4d4d';
+        clearBtn.style.color = 'white';
+        clearBtn.style.border = 'none';
+        clearBtn.style.borderRadius = '4px';
+        clearBtn.style.cursor = 'pointer';
+
+        clearBtn.onclick = () => {
+            this.debugContainer.innerHTML = '';
+        };
+
+        this.debugWindow.document.body.appendChild(clearBtn);
+        this.addScrollHandler();
+
+    }
+    return this.debugContainer;
+};
+
+SpiceDisplayConn.prototype.createDebugCanvas = function(options) {
+    const { width, height, id, imageData, info } = options;
+
+    const container = this.getDebugContainer();
+
+    const wrapper = container.ownerDocument.createElement('div');
+    wrapper.className = 'debug-canvas';
+
+    const infoDiv = container.ownerDocument.createElement('div');
+    infoDiv.className = 'canvas-info';
+    infoDiv.textContent = info;
+    wrapper.appendChild(infoDiv);
+
+    const canvas = container.ownerDocument.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.id = id;
+
+    const ctx = canvas.getContext('2d');
+    ctx.putImageData(imageData, 0, 0);
+
+    wrapper.appendChild(canvas);
+    
+    container.appendChild(wrapper);
+    
+    this.autoScrollDebugContainer();
+    
+    return wrapper;
+};
+
+SpiceDisplayConn.prototype.addClearButton = function() {
+    if (!this.debugWindow || this.debugWindow.closed) return;
+    
+    const clearBtn = this.debugWindow.document.createElement('button');
+    clearBtn.textContent = 'Clear All';
+    clearBtn.style.position = 'fixed';
+    clearBtn.style.top = '10px';
+    clearBtn.style.right = '10px';
+    clearBtn.style.zIndex = '1000';
+    
+    clearBtn.onclick = () => {
+        this.debugContainer.innerHTML = '';
+    };
+    
+    this.debugWindow.document.body.appendChild(clearBtn);
+};
+
+SpiceDisplayConn.prototype.autoScrollDebugContainer = function() {
+    if (!this.debugContainer || !this.debugWindow) return;
+
+    const shouldAutoScroll = () => {
+        const threshold = 100;
+        const position = this.debugContainer.scrollTop + this.debugContainer.clientHeight;
+        const height = this.debugContainer.scrollHeight;
+        return height - position <= threshold;
+    };
+
+    if (shouldAutoScroll()) {
+        this.debugContainer.scrollTop = this.debugContainer.scrollHeight;
+    }
+};
+
+SpiceDisplayConn.prototype.addAutoScrollToggle = function() {
+    if (!this.debugContainer || !this.debugWindow) return;
+
+    const toggleBtn = this.debugWindow.document.createElement('button');
+    toggleBtn.textContent = 'Auto Scroll: ON';
+    toggleBtn.style.position = 'fixed';
+    toggleBtn.style.top = '50px';
+    toggleBtn.style.right = '10px';
+    toggleBtn.style.zIndex = '1000';
+    toggleBtn.style.padding = '6px 12px';
+    toggleBtn.style.backgroundColor = '#4CAF50';
+    toggleBtn.style.color = 'white';
+    toggleBtn.style.border = 'none';
+    toggleBtn.style.borderRadius = '4px';
+    toggleBtn.style.cursor = 'pointer';
+
+    let autoScrollEnabled = true;
+
+    toggleBtn.onclick = () => {
+        autoScrollEnabled = !autoScrollEnabled;
+        toggleBtn.textContent = `Auto Scroll: ${autoScrollEnabled ? 'ON' : 'OFF'}`;
+        
+        this.autoScrollDebugContainer = autoScrollEnabled 
+            ? this.autoScrollDebugContainer 
+            : () => {};
+    };
+
+    this.debugWindow.document.body.appendChild(toggleBtn);
+};
+
+SpiceDisplayConn.prototype.addScrollHandler = function() {
+    if (!this.debugContainer || !this.debugWindow) return;
+
+    let isUserScrolling = false;
+
+    this.debugContainer.addEventListener('scroll', () => {
+        isUserScrolling = true;
+        setTimeout(() => {
+            isUserScrolling = false;
+        }, 100);
+    });
+
+    this.autoScrollDebugContainer = function() {
+        if (!this.debugContainer || !this.debugWindow) return;
+
+        if (!isUserScrolling) {
+            this.debugContainer.scrollTop = this.debugContainer.scrollHeight;
+        }
+    };
+};
 
 function handle_mouseover(e)
 {
