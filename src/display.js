@@ -740,6 +740,17 @@ SpiceDisplayConn.prototype.draw_copy_helper = function(o) {
     const context = canvas.context;
     const format = surface.format;
 
+    const box = o.base.box;
+    const clearLeft = Math.max(0, box.left - 2);
+    const clearTop = Math.max(0, box.top - 2);
+    const clearWidth = Math.min(canvas.width - clearLeft, box.right - box.left + 4);
+    const clearHeight = Math.min(canvas.height - clearTop, box.bottom - box.top + 4);
+
+    if (Utils.DEBUG > 1) {
+        context.fillStyle = 'rgba(255, 0, 0, 0.7)';
+        context.fillRect(clearLeft, clearTop, clearWidth, clearHeight);
+    }
+
     if (o.has_alpha) {
         if (format === Constants.SPICE_SURFACE_FMT_32_xRGB) {
             stripAlpha(o.image_data);
