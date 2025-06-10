@@ -29,6 +29,8 @@ var PLAYBACK_DEBUG = 0;
 var STREAM_DEBUG = 0;
 var DUMP_DRAWS = false;
 var DUMP_CANVASES = false;
+var DUMP_JPEG = false;
+var DUMP_DRAW_COPY = false;
 
 /*----------------------------------------------------------------------------
 **  We use an Image temporarily, and the image/src does not get garbage
@@ -343,6 +345,8 @@ export {
   DUMP_DRAWS,
   DUMP_CANVASES,
   EMPTY_GIF_IMAGE,
+  DUMP_JPEG,
+  DUMP_DRAW_COPY,
   combine_array_buffers,
   hexdump_buffer,
   arraybuffer_to_str,

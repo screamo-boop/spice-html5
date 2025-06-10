@@ -267,7 +267,6 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg) {
                     draw_fill.base.box.right - draw_fill.base.box.left,
                     draw_fill.base.box.bottom - draw_fill.base.box.top
                 );
-
                 if (Utils.DUMP_DRAWS && this.parent.dump_id) {
                     const debug_canvas = document.createElement("canvas");
                     debug_canvas.width = this.surfaces[draw_fill.base.surface_id].canvas.width;
@@ -320,7 +319,6 @@ SpiceDisplayConn.prototype.process_channel_message = function(msg) {
             );
             const source_img = source_context.getImageData(copy_bits.src_pos.x, copy_bits.src_pos.y, width, height);
             putImageDataWithAlpha.call(this, source_context, source_img, copy_bits.base.box.left, copy_bits.base.box.top);
-
             if (Utils.DUMP_DRAWS && this.parent.dump_id) {
                 const debug_canvas = document.createElement("canvas");
                 debug_canvas.width = width;
@@ -567,14 +565,54 @@ SpiceDisplayConn.prototype.draw_copy_helper = async function(o) {
         this.cache = this.cache || {};
         this.cache[o.descriptor.id] = o.image_data;
     }
+    if (Utils.DUMP_DRAWS || Utils.DUMP_DRAW_COPY) {
+        if (!this.debugWindow || this.debugWindow.closed) {
+            this.debugWindow = window.open('', 'SpiceDebugWindow', 'width=800,height=600,scrollbars=yes');
+            this.debugWindow.document.title = 'Spice Debug Canvases';
+            this.debugWindow.document.body.style.cssText = 'margin: 10px; background: #f0f0f0;';
 
-    if (Utils.DUMP_DRAWS && this.parent.dump_id) {
+            const container = this.debugWindow.document.createElement('div');
+            container.id = 'debug-container';
+            container.style.cssText = 'display: flex; flex-wrap: wrap; gap: 10px;';
+            this.debugWindow.document.body.appendChild(container);
+
+            const clearButton = this.debugWindow.document.createElement('button');
+            clearButton.textContent = 'Clear Page';
+            clearButton.style.cssText = 'padding: 8px 16px; margin-top: 10px; cursor: pointer; display: block; width: 100%; text-align: center;';
+            clearButton.addEventListener('click', () => {
+                const container = this.debugWindow.document.getElementById('debug-container');
+                while (container.firstChild) {
+                    container.removeChild(container.firstChild);
+                }
+            });
+            this.debugWindow.document.body.appendChild(clearButton);
+        }
+
+        const wrapper = document.createElement("div");
+        wrapper.style.cssText = 'display: flex; flex-direction: column; align-items: center;';
+
+        const caption = document.createElement("span");
+        caption.textContent = o.tag;
+        caption.style.cssText = 'font-size: 12px; text-align: center; margin-bottom: 5px;';
+
         const debug_canvas = document.createElement("canvas");
         debug_canvas.width = o.image_data.width;
         debug_canvas.height = o.image_data.height;
         debug_canvas.id = `${o.tag}.${this.surfaces[o.base.surface_id].draw_count}.${o.base.surface_id}@${o.base.box.left}x${o.base.box.top}`;
+        debug_canvas.style.cssText = `border: 1px solid black; cursor: pointer; width: ${o.image_data.width}px; height: ${o.image_data.height}px; object-fit: none;`;
         debug_canvas.getContext("2d").putImageData(o.image_data, 0, 0);
-        document.getElementById(this.parent.dump_id).appendChild(debug_canvas);
+        debug_canvas.addEventListener('click', () => {
+            console.log(o);
+        });
+
+        wrapper.appendChild(caption);
+        wrapper.appendChild(debug_canvas);
+        this.debugWindow.document.getElementById('debug-container').appendChild(wrapper);
+
+        this.debugWindow.scrollTo({
+            top: this.debugWindow.document.body.scrollHeight,
+            behavior: 'smooth'
+        });
     }
 
     this.surfaces[o.base.surface_id].draw_count++;
@@ -754,11 +792,54 @@ function handle_draw_jpeg_onload() {
         }
     }
 
-    if (!temp_canvas && Utils.DUMP_DRAWS && sc.parent.dump_id) {
+    if (!temp_canvas && (Utils.DUMP_DRAWS || Utils.DUMP_JPEG)) {
+        if (!sc.debugWindow || sc.debugWindow.closed) {
+            sc.debugWindow = window.open('', 'SpiceDebugWindow', 'width=800,height=600,scrollbars=yes');
+            sc.debugWindow.document.title = 'Spice Debug Canvases';
+            sc.debugWindow.document.body.style.cssText = 'margin: 10px; background: #f0f0f0;';
+
+            const container = sc.debugWindow.document.createElement('div');
+            container.id = 'debug-container';
+            container.style.cssText = 'display: flex; flex-wrap: wrap; gap: 10px;';
+            sc.debugWindow.document.body.appendChild(container);
+
+            const clearButton = sc.debugWindow.document.createElement('button');
+            clearButton.textContent = 'Clear Page';
+            clearButton.style.cssText = 'padding: 8px 16px; margin-top: 10px; cursor: pointer; display: block; width: 100%; text-align: center;';
+            clearButton.addEventListener('click', () => {
+                const container = sc.debugWindow.document.getElementById('debug-container');
+                while (container.firstChild) {
+                    container.removeChild(container.firstChild);
+                }
+            });
+            sc.debugWindow.document.body.appendChild(clearButton);
+        }
+
+        const wrapper = document.createElement("div");
+        wrapper.style.cssText = 'display: flex; flex-direction: column; align-items: center;';
+
+        const caption = document.createElement("span");
+        caption.textContent = this.o.tag;
+        caption.style.cssText = 'font-size: 12px; text-align: center; margin-bottom: 5px;';
+
         const debug_canvas = document.createElement("canvas");
-        debug_canvas.id = `${this.o.tag}.${sc.surfaces[this.o.base.surface_id].draw_count}.${this.o.base.surface_id}@${this.o.base.box.left}x${this.o.base.box.top}`;
+        debug_canvas.width = width;
+        debug_canvas.height = height;
+        debug_canvas.id = `${this.o.tag}@${this.o.base.box.left}x${this.o.base.box.top}`;
+        debug_canvas.style.cssText = `border: 1px solid black; cursor: pointer; width: ${width}px; height: ${height}px; object-fit: none;`;
         debug_canvas.getContext("2d").drawImage(offscreenCanvas, 0, 0);
-        document.getElementById(sc.parent.dump_id).appendChild(debug_canvas);
+        debug_canvas.addEventListener('click', () => {
+            console.log(this.o);
+        });
+
+        wrapper.appendChild(caption);
+        wrapper.appendChild(debug_canvas);
+        sc.debugWindow.document.getElementById('debug-container').appendChild(wrapper);
+
+        sc.debugWindow.scrollTo({
+            top: sc.debugWindow.document.body.scrollHeight,
+            behavior: 'smooth'
+        });
     }
 
     if (!temp_canvas) {
