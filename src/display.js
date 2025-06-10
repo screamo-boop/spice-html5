@@ -798,7 +798,6 @@ function process_mjpeg_stream_data(sc, m, time_until_due) {
         msg_mmtime: m.base.multi_media_time,
         flip: shouldFlip
     };
-    console.log(img.o)
     img.onload = function() {
         handle_draw_jpeg_onload.call(this);
         URL.revokeObjectURL(this.src); // Clean up Blob URL
