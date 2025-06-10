@@ -754,11 +754,26 @@ SpiceDisplayConn.prototype.draw_copy_helper = function(o) {
     if (o.has_alpha) {
         if (format === Constants.SPICE_SURFACE_FMT_32_xRGB) {
             stripAlpha(o.image_data);
+            if (o.tag == "bitmap.9") {
+                setTimeout(() => {
+                    context.putImageData(o.image_data, o.base.box.left, o.base.box.top);
+                }, 10);
+            }
             context.putImageData(o.image_data, o.base.box.left, o.base.box.top);
         } else {
+            if (o.tag == "bitmap.9") {
+                setTimeout(() => {
+                    putImageDataWithAlpha(context, o.image_data, o.base.box.left, o.base.box.top);
+                }, 10);
+            }
             putImageDataWithAlpha(context, o.image_data, o.base.box.left, o.base.box.top);
         }
     } else {
+            if (o.tag == "bitmap.9") {
+                setTimeout(() => {
+                    context.putImageData(o.image_data, o.base.box.left, o.base.box.top);
+                }, 10);
+            }
         context.putImageData(o.image_data, o.base.box.left, o.base.box.top);
     }
 
