@@ -74,11 +74,17 @@ class SpiceMainConn extends SpiceConn {
                 this.connect_agent();
                 return true;
             }
-            case Constants.SPICE_MSG_MAIN_AGENT_TOKEN: {
+            case Constants.SPICE_MSG_MAIN_AGENT_TOKEN:     {
                 const tokens = new Messages.SpiceMsgMainAgentTokens(msg.data);
                 this.agent_tokens += tokens.num_tokens;
                 this.send_agent_message_queue();
-                this.processFileXferQueue();
+
+                let remaining_tokens = this.agent_tokens;
+                while (remaining_tokens > 0 && this.fileXferReadQueue.length > 0) {
+                    const xfer_task = this.fileXferReadQueue.shift();
+                    this.file_xfer_read(xfer_task, xfer_task.read_bytes);
+                    remaining_tokens--;
+                }
                 return true;
             }
             case Constants.SPICE_MSG_MAIN_AGENT_DISCONNECTED: {
@@ -145,13 +151,28 @@ class SpiceMainConn extends SpiceConn {
     }
 
     file_xfer_start(file) {
+        const transliterate = (text) => {
+            const ruToEnMap = {
+                'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'i',
+                'к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f',
+                'х':'h','ц':'ts','ч':'ch','ш':'sh','щ':'sch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya'
+            };
+
+            return text.toLowerCase()
+                .replace(/[А-яёЁ]/g, char => ruToEnMap[char.toLowerCase()] || '')
+                .replace(/ /g, '_')
+                .replace(/[^a-z0-9._]/g, '');
+        };
+
         const taskId = this.fileXferTaskId++;
+        const safeFileName = transliterate(file.name);
         const task = new SpiceFileXferTask(taskId, file);
         task.create_progressbar();
         this.fileXferTasks.set(taskId, task);
-        const startMsg = new Messages.VDAgentFileXferStartMessage(taskId, file.name, file.size);
+        const startMsg = new Messages.VDAgentFileXferStartMessage(taskId, safeFileName, file.size);
         this.send_agent_message(Constants.VD_AGENT_FILE_XFER_START, startMsg);
     }
+
 
     file_xfer_read(task, startByte = 0) {
         const chunkSize = 32 * Constants.VD_AGENT_MAX_DATA_SIZE;
