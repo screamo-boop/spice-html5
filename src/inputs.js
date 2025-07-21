@@ -194,7 +194,7 @@ async function simulateClipboardTyping(sc) {
     try {
         const clipboardText = await navigator.clipboard.readText();
 
-        const shiftRequiredRegex = /[A-Z!@#$%^&*()_+{}:"<>?|~]/;
+        const shiftRequiredRegex = /[A-Z!@#$%^&*()_+{}:"<>?|~ЁЖЭБЮ:№;]/;
 
         for (const char of clipboardText) {
             if (char === '\n') {
