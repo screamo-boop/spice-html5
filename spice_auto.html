@@ -63,7 +63,7 @@
                 const scheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
                 const host = utils.queryParam('host', window.location.hostname);
                 const port = utils.queryParam('port', window.location.port || (window.location.protocol === 'https:' ? '443' : '80'));
-                const path = utils.queryParam('path', 'websockify');
+                const path = utils.queryParam('path', '');
                 const uri = `${scheme}${host}:${port}/${path.replace(/^\//, '')}`;
                 const token = utils.queryParam('token');
 
