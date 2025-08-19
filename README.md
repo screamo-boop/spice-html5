@@ -61,3 +61,7 @@ I use firefox as my main browser, all tests happen on it
 
   The TODO file should be a fairly comprehensive list of tasks
   required to make this client more fully functional.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=screamo-boop/spice-html5&type=Date)](https://www.star-history.com/#screamo-boop/spice-html5&Date)
